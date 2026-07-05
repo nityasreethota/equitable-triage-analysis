@@ -28,7 +28,7 @@ def print_separator(width=65):
 
 
 def check_satisfied(value_A, value_B, tol=0.05):
-    return "Y" if abs(value_A - value_B) < tol else "N VIOLATED"
+    return "SATISFIED" if abs(value_A - value_B) < tol else "VIOLATED"
 
 
 def format_comparison_row(label, val_A, val_B,
