@@ -4,3 +4,5 @@ scikit-learn
 matplotlib
 seaborn
 scipy
+scikit-optimize
+shap
