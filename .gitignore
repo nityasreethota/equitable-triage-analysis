@@ -1,0 +1,7 @@
+# ==========================================
+# Python Standard & Environments
+# ==========================================
+# Virtual environments
+.venv/
+venv/
+env/
