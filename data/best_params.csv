@@ -1,0 +1,2 @@
+max_features,max_samples,bootstrap,max_depth
+1,0.6,True,3
