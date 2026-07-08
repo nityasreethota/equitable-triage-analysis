@@ -1,20 +1,3 @@
-"""
-config.py
-
-Central configuration for the equitable triage framework.
-Supports multiple modes:
-  CHRONOSIG - Adult secondary mental health triage
-  CAMHS     - Child and adolescent mental health triage
-  COMBINED  - Both systems (future)
-
-Change CURRENT_MODE to switch between datasets and features.
-All output files are automatically suffixed with mode name.
-
-Author: Nitya Thota
-Institution: KCLMS
-Date: 2026
-"""
-
 import os
 
 # ─────────────────────────────────────────
@@ -58,35 +41,26 @@ MODE_CONFIG = {
         "population": "Children and young people 5-17",
         "data_file": "synthetic_camhs_data.csv",
         "features": [
-            # Child self-report
-            'sdq_emotional_c',
-            'sdq_conduct_c',
-            'sdq_hyperactivity_c',
-            'sdq_peer_c',
-            'sdq_prosocial_c',
-            'sdq_total_c',
-            'rcads_separation_anxiety_c',
-            'rcads_social_phobia_c',
-            'rcads_gad_c',
-            'rcads_panic_c',
-            'rcads_ocd_c',
-            'rcads_depression_c',
-            'rcads_total_c',
-            # Parent report (may be missing)
-            'sdq_total_p',
-            'rcads_total_p',
-            # Discrepancy and derived
+            'child_total_difficulties',
+            'child_prosocial',
+            'child_total_anxiety',
+            'child_depression',
+            'child_total_mental_health',
+            'child_impact_total',
+            'child_impact_severity',
+            'child_duration',
+            'parent_total_difficulties',
+            'parent_total_mental_health',
+            'parent_impact_total',
+            'parent_data_missing',
+            'perspective_agreement',
             'sdq_discrepancy',
-            'impact_overall_severity_c',
-            'impact_duration_c',
-            'impact_distress_c',
-            'impact_overall_severity_p',
-            'impact_family_burden_p',
-            # Demographics
+            'underreporting_index',
+            'overall_severity',
+            'chronicity',
+            'functional_impairment',
             'age',
             'gender',
-            'parent_data_missing',
-            'duration_months_c',
         ],
         "primary_bias_feature": "sdq_discrepancy",
         "bias_description": (
@@ -232,7 +206,6 @@ COLOR_BAYES = 'purple'
 DPI = 150
 FIGURE_TITLE_SUFFIX = (
     f'From Probabilities to Decisions [{CURRENT_MODE}] - '
-    f'Nitya Thota, KCLMS 2026'
 )
 
 # ─────────────────────────────────────────

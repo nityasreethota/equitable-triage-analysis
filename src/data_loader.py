@@ -8,8 +8,24 @@ from src.config import (
 
 
 def load_data():
-    df = pd.read_csv(DATA_PATH)
-    X = df[FEATURES].fillna(-1)
+    """
+    Load dataset based on current mode.
+    Applies feature engineering for CAMHS mode.
+    """
+    from src.config import CURRENT_MODE, DATA_PATH, FEATURES, TARGET
+
+    df_raw = pd.read_csv(DATA_PATH)
+
+    if CURRENT_MODE == "CAMHS":
+        from src.feature_engineering import engineer_camhs_features
+        df = engineer_camhs_features(df_raw)
+        # Use engineered features
+        available = [f for f in FEATURES if f in df.columns]
+        X = df[available].fillna(-1)
+    else:
+        df = df_raw
+        X = df[FEATURES].fillna(-1)
+
     y = df[TARGET]
     return df, X, y
 

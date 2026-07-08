@@ -1,40 +1,3 @@
-"""
-generate_synthetic_camhs_data.py
-
-Generates synthetic CAMHS (Child and Adolescent Mental Health Services)
-triage data based on real clinical questionnaires:
-
-  - SDQ (Strengths and Difficulties Questionnaire)
-    25 items, 3 options each (0/1/2)
-    Parent and Child perspectives
-    Scored into 5 subscales + total
-
-  - RCADS (Revised Child Anxiety and Depression Scale)
-    47 items, 4 options each (0/1/2/3)
-    Parent and Child perspectives
-    Scored into 6 subscales
-
-  - Impact Supplement
-    Parent and Child perspectives
-    Severity, duration, distress, functional interference
-
-Data generation process:
-  1. Define all raw questionnaire items
-  2. Generate item-level responses with clinical distributions
-  3. Score items into validated subscales
-  4. Apply demographic bias (young carers underreport)
-  5. Handle missing parent data (single parent case)
-  6. Generate true clinical outcome
-  7. Save both raw items and processed features
-
-This demonstrates the full pipeline from questionnaire
-to model-ready features - not starting from fixed variables.
-
-Author: Nitya Thota
-Institution: KCLMS
-Date: 2026
-"""
-
 import numpy as np
 import pandas as pd
 import os
@@ -225,10 +188,8 @@ def generate_sdq_items(n, severity_mean, severity_std,
                         underreport_factor=1.0):
     """
     Generate SDQ item responses (0/1/2) for n patients.
-
     severity_mean: average latent severity (0-10)
     underreport_factor: <1.0 means patient underreports
-                        (key mechanism for young carer bias)
     """
     items = np.zeros((n, len(SDQ_ITEMS)), dtype=int)
 
@@ -754,14 +715,5 @@ Pipeline demonstrated:
   7. Computed discrepancy features
   8. Generated true clinical outcome independently
 
-The underreporting mechanism is the CAMHS equivalent
-of referral_length in CHRONOSIG:
-  CHRONOSIG: short referral letters -> model misses Group A
-  CAMHS: underreported SDQ/RCADS + missing parent data
-         -> model misses Group A
 
-Same mathematical argument applies:
-  Chouldechova's impossibility result
-  Group-specific ROC thresholds as fix
-  Two-stage bias reduction framework
 """)
