@@ -5,3 +5,10 @@
 .venv/
 venv/
 env/
+
+# Python cache and bytecode
+src/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc

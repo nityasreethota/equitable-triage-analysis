@@ -9,7 +9,7 @@ from src.config import (
 
 def load_data():
     df = pd.read_csv(DATA_PATH)
-    X = df[FEATURES]
+    X = df[FEATURES].fillna(-1)
     y = df[TARGET]
     return df, X, y
 

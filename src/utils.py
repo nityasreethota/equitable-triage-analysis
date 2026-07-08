@@ -8,12 +8,18 @@ def ensure_output_dir():
 
 
 def save_plot(filename, tight=True):
+    """
+    Save current matplotlib figure.
+    Uses mode-aware filename from config.
+    """
+    from src.config import get_output_path
     ensure_output_dir()
     if tight:
         plt.tight_layout()
-    filepath = os.path.join(OUTPUT_DIR, filename)
-    plt.savefig(filepath, dpi=DPI, bbox_inches='tight')
+    filepath = get_output_path(filename)
+    plt.savefig(filepath, dpi=DPI, bbox_inches='tight') 
     print(f"Plot saved to {filepath}")
+    return filepath
 
 
 def print_header(title, width=65):
