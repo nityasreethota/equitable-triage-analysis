@@ -5,64 +5,54 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_curve
 import os
 import warnings
 warnings.filterwarnings('ignore')
 
-# ─────────────────────────────────────────
-# 1. LOAD DATA AND TRAIN MODEL
-# ─────────────────────────────────────────
+# # ─────────────────────────────────────────
+# # 1. LOAD DATA AND TRAIN MODEL
+# # ─────────────────────────────────────────
 
-df = pd.read_csv('data/synthetic_nhs_data.csv')
-# df['group_binary'] = (df['group'] == 'B').astype(int)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# FEATURES = ['risk_score', 'referral_length',
-#             'previous_contacts', 'age', 'group_binary']
-
-FEATURES = ['risk_score', 'referral_length',
-            'previous_contacts', 'age' ]
-
-TARGET = 'true_outcome'
-
-X = df[FEATURES]
-y = df[TARGET]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42, stratify=y
+from src.config import (
+    FEATURES, P_A, P_B, UNIFORM_THRESHOLD, COLOR_A, COLOR_B,
+    FIGURE_TITLE_SUFFIX, OUTPUT_DIR
+)
+from src.data_loader import load_and_split
+from src.models import get_grid_model, train_model
+from src.metrics import (
+    compute_metrics_at_threshold,
+    find_optimal_threshold
+)
+from src.utils import (
+    print_header, save_plot, ensure_output_dir
 )
 
-# rf = RandomForestClassifier(
-#     n_estimators=100, max_depth=5,
-#     random_state=42, class_weight='balanced'
-# )
-rf = RandomForestClassifier(
-    n_estimators=100,
-    max_features=1,
-    max_samples=0.6,
-    bootstrap=True,
-    max_depth=3,
-    random_state=42,
-    class_weight='balanced'
-)
-rf.fit(X_train, y_train)
+# ─────────────────────────────────────────
+# 1. LOAD DATA
+# ─────────────────────────────────────────
 
-y_prob = rf.predict_proba(X_test)[:, 1]
+(df, X_train, X_test, y_train, y_test,
+ groups, X_A, y_A, X_B, y_B) = load_and_split()
 
-df_test = X_test.copy()
-df_test['true_outcome'] = y_test.values
-df_test['predicted_prob'] = y_prob
-df_test['group'] = df.loc[X_test.index, 'group'].values
+print_header("THRESHOLD OPTIMISATION ANALYSIS")
+print(f"Training set: {len(X_train)} patients")
+print(f"Test set:     {len(X_test)} patients")
 
-df_A = df_test[df_test['group'] == 'A']
-df_B = df_test[df_test['group'] == 'B']
+# ─────────────────────────────────────────
+# 2. TRAIN MODEL
+# ─────────────────────────────────────────
 
-print("Model trained successfully")
-print(f"Group A test patients: {len(df_A)}")
-print(f"Group B test patients: {len(df_B)}")
-print()
+rf = train_model(get_grid_model(), X_train, y_train)
+print(f"\n  treshold optimisation- GRID model trained")
+print(f"Trees: {rf.n_estimators}, max_depth: {rf.max_depth}")
+
+#------------------------------------------------
+#3. COMPUTE METRICS
+#------------------------------------------------
+m_A = compute_metrics_at_threshold(X_A, y_A, rf)
+m_B = compute_metrics_at_threshold(X_B, y_B, rf)
 
 # ─────────────────────────────────────────
 # 2. BAYESIAN LOSS FRAMEWORK
@@ -80,27 +70,8 @@ print("=" * 65)
 print("COST SENSITIVITY ANALYSIS")
 print("=" * 65)
 
-# Get ROC curves
-fpr_A, tpr_A, thresholds_A = roc_curve(
-    df_A['true_outcome'], df_A['predicted_prob']
-)
-fpr_B, tpr_B, thresholds_B = roc_curve(
-    df_B['true_outcome'], df_B['predicted_prob']
-)
-
-P_A = df_A['true_outcome'].mean()
-P_B = df_B['true_outcome'].mean()
-
-def expected_loss(fpr, tpr, thresholds, c_fn, c_fp, base_rate):
-    """Compute expected loss at each threshold."""
-    fnr = 1 - tpr
-    return c_fn * fnr * base_rate + c_fp * fpr * (1 - base_rate)
-
-def optimal_threshold(fpr, tpr, thresholds, c_fn, c_fp, base_rate):
-    """Find threshold minimising expected loss."""
-    losses = expected_loss(fpr, tpr, thresholds, c_fn, c_fp, base_rate)
-    idx = np.argmin(losses)
-    return thresholds[idx], losses[idx], tpr[idx], fpr[idx]
+m_A = compute_metrics_at_threshold(X_A, y_A, rf)
+m_B = compute_metrics_at_threshold(X_B, y_B, rf)
 
 # Test different cost ratios
 cost_ratios = [1, 2, 3, 5, 10, 20]
@@ -112,14 +83,11 @@ print("-" * 58)
 
 for ratio in cost_ratios:
     C_FN = ratio * C_FP
-    tau_A, _, tpr_a, fpr_a = optimal_threshold(
-        fpr_A, tpr_A, thresholds_A, C_FN, C_FP, P_A
-    )
-    tau_B, _, tpr_b, fpr_b = optimal_threshold(
-        fpr_B, tpr_B, thresholds_B, C_FN, C_FP, P_B
-    )
-    print(f"c_FN/c_FP={ratio:<3} {tau_A:<16.3f} "
-          f"{tau_B:<16.3f} {tau_B-tau_A:<12.3f}")
+    thresholds_A, losses_A, tpr_A, fpr_A = find_optimal_threshold(rf, X_A, y_A, C_FN, C_FP)
+    thresholds_B, losses_B, tpr_B, fpr_B = find_optimal_threshold(rf, X_B, y_B, C_FN, C_FP)
+        
+    print(f"c_FN/c_FP={ratio:<3} {thresholds_A:<16.3f} "
+          f"{thresholds_B:<16.3f} {thresholds_B-thresholds_A:<12.3f}")
 
 print("""
 Observation: As c_FN/c_FP increases (missing someone costs more),
@@ -134,11 +102,11 @@ This reflects the higher cost of missing Group A patients.
 C_FN = 5.0
 C_FP = 1.0
 
-tau_A_opt, loss_A, tpr_A_opt, fpr_A_opt = optimal_threshold(
-    fpr_A, tpr_A, thresholds_A, C_FN, C_FP, P_A
+thresholds_A_opt, losses_A, tpr_A_opt, fpr_A_opt = find_optimal_threshold(
+    rf, X_A, y_A, C_FN, C_FP
 )
-tau_B_opt, loss_B, tpr_B_opt, fpr_B_opt = optimal_threshold(
-    fpr_B, tpr_B, thresholds_B, C_FN, C_FP, P_B
+thresholds_B_opt, losses_B, tpr_B_opt, fpr_B_opt = find_optimal_threshold(
+    rf, X_B, y_B, C_FN, C_FP
 )
 
 print("=" * 65)
@@ -147,21 +115,21 @@ print("=" * 65)
 print(f"""
 Group A:
   Base rate P_A:          {P_A:.3f}
-  Optimal threshold τ_A:  {tau_A_opt:.3f}
+  Optimal threshold τ_A:  {thresholds_A_opt:.3f}
   TPR at τ_A:             {tpr_A_opt:.3f}
   FPR at τ_A:             {fpr_A_opt:.3f}
-  Minimum expected loss:  {loss_A:.4f}
+  Minimum expected loss:  {losses_A:.4f}
 
 Group B:
   Base rate P_B:          {P_B:.3f}
-  Optimal threshold τ_B:  {tau_B_opt:.3f}
+  Optimal threshold τ_B:  {thresholds_B_opt:.3f}
   TPR at τ_B:             {tpr_B_opt:.3f}
   FPR at τ_B:             {fpr_B_opt:.3f}
-  Minimum expected loss:  {loss_B:.4f}
+  Minimum expected loss:  {losses_B:.4f}
 
 Uniform threshold τ=0.4 for comparison:
-  τ_A - τ_uniform:        {tau_A_opt - 0.4:.3f}
-  τ_B - τ_uniform:        {tau_B_opt - 0.4:.3f}
+  τ_A - τ_uniform:        {thresholds_A_opt - 0.4:.3f}
+  τ_B - τ_uniform:        {thresholds_B_opt - 0.4:.3f}
 """)
 
 # ─────────────────────────────────────────
@@ -191,18 +159,18 @@ fpr_A_range = []
 fpr_B_range = []
 
 for tau in thresholds_range:
-    tpr_a, fpr_a, fnr_a = metrics_at_threshold(df_A, tau)
-    tpr_b, fpr_b, fnr_b = metrics_at_threshold(df_B, tau)
+    m_A_optimal = compute_metrics_at_threshold(X_A, y_A, rf, tau)
+    m_B_optimal = compute_metrics_at_threshold(X_B, y_B, rf, tau)
 
-    loss_a = C_FN * fnr_a * P_A + C_FP * fpr_a * (1 - P_A)
-    loss_b = C_FN * fnr_b * P_B + C_FP * fpr_b * (1 - P_B)
+    loss_a = C_FN * m_A_optimal['FNR'] * P_A + C_FP * m_A_optimal['FPR'] * (1 - P_A)
+    loss_b = C_FN * m_B_optimal['FNR'] * P_B + C_FP * m_B_optimal['FPR'] * (1 - P_B)
 
     losses_A_range.append(loss_a)
     losses_B_range.append(loss_b)
-    tpr_A_range.append(tpr_a)
-    tpr_B_range.append(tpr_b)
-    fpr_A_range.append(fpr_a)
-    fpr_B_range.append(fpr_b)
+    tpr_A_range.append(m_A_optimal['TPR'])
+    tpr_B_range.append(m_B_optimal['TPR'])
+    fpr_A_range.append(m_A_optimal['FPR'])
+    fpr_B_range.append(m_B_optimal['FPR'])
 
 # ─────────────────────────────────────────
 # 6. VISUALISATIONS
@@ -221,15 +189,15 @@ axes[0, 0].plot(thresholds_range, losses_B_range,
                 label='Group B expected loss')
 axes[0, 0].axvline(x=0.4, color='black', linestyle='--',
                     linewidth=2, label='Uniform τ=0.4')
-axes[0, 0].axvline(x=tau_A_opt, color='steelblue',
+axes[0, 0].axvline(x=thresholds_A_opt, color='steelblue',
                     linestyle=':', linewidth=2,
-                    label=f'Optimal τ_A={tau_A_opt:.3f}')
-axes[0, 0].axvline(x=tau_B_opt, color='coral',
+                    label=f'Optimal τ_A={thresholds_A_opt:.3f}')
+axes[0, 0].axvline(x=thresholds_B_opt, color='coral',
                     linestyle=':', linewidth=2,
-                    label=f'Optimal τ_B={tau_B_opt:.3f}')
-axes[0, 0].scatter([tau_A_opt], [min(losses_A_range)],
+                    label=f'Optimal τ_B={thresholds_B_opt:.3f}')
+axes[0, 0].scatter([thresholds_A_opt], [min(losses_A_range)],
                     color='steelblue', s=100, zorder=5)
-axes[0, 0].scatter([tau_B_opt], [min(losses_B_range)],
+axes[0, 0].scatter([thresholds_B_opt], [min(losses_B_range)],
                     color='coral', s=100, zorder=5)
 axes[0, 0].set_xlabel('Threshold τ')
 axes[0, 0].set_ylabel('Expected Loss E[L]')
@@ -244,11 +212,11 @@ tau_B_by_ratio = []
 cost_ratios_plot = np.linspace(1, 20, 50)
 
 for ratio in cost_ratios_plot:
-    t_A, _, _, _ = optimal_threshold(
-        fpr_A, tpr_A, thresholds_A, ratio, C_FP, P_A
+    t_A, losses_A, tpr_A_opt, fpr_A_opt = find_optimal_threshold(
+    rf, X_A, y_A, C_FN, C_FP
     )
-    t_B, _, _, _ = optimal_threshold(
-        fpr_B, tpr_B, thresholds_B, ratio, C_FP, P_B
+    t_B, losses_B, tpr_B_opt, fpr_B_opt = find_optimal_threshold(
+        rf, X_B, y_B, C_FN, C_FP
     )
     tau_A_by_ratio.append(t_A)
     tau_B_by_ratio.append(t_B)
@@ -279,12 +247,12 @@ axes[1, 0].plot(thresholds_range, tpr_B_range,
                 label='Group B TPR')
 axes[1, 0].axvline(x=0.4, color='black', linestyle='--',
                     linewidth=2, label='Uniform τ=0.4')
-axes[1, 0].axvline(x=tau_A_opt, color='steelblue',
+axes[1, 0].axvline(x=thresholds_A_opt, color='steelblue',
                     linestyle=':', linewidth=2,
-                    label=f'Optimal τ_A={tau_A_opt:.3f}')
-axes[1, 0].axvline(x=tau_B_opt, color='coral',
+                    label=f'Optimal τ_A={thresholds_A_opt:.3f}')
+axes[1, 0].axvline(x=thresholds_B_opt, color='coral',
                     linestyle=':', linewidth=2,
-                    label=f'Optimal τ_B={tau_B_opt:.3f}')
+                    label=f'Optimal τ_B={thresholds_B_opt:.3f}')
 axes[1, 0].set_xlabel('Threshold τ')
 axes[1, 0].set_ylabel('True Positive Rate (TPR)')
 axes[1, 0].set_title('TPR by Group Across All Thresholds')
@@ -299,12 +267,12 @@ axes[1, 1].plot(thresholds_range, tpr_gap,
 axes[1, 1].axvline(x=0.4, color='black', linestyle='--',
                     linewidth=2,
                     label=f'Uniform τ=0.4 (gap={tpr_gap[np.argmin(np.abs(thresholds_range-0.4))]:.3f})')
-axes[1, 1].axvline(x=tau_A_opt, color='steelblue',
+axes[1, 1].axvline(x=thresholds_A_opt, color='steelblue',
                     linestyle=':', linewidth=2,
-                    label=f'Optimal τ_A={tau_A_opt:.3f}')
-axes[1, 1].scatter([tau_A_opt],
+                    label=f'Optimal τ_A={thresholds_A_opt:.3f}')
+axes[1, 1].scatter([thresholds_A_opt],
                     [tpr_gap[np.argmin(np.abs(
-                        thresholds_range - tau_A_opt))]],
+                        thresholds_range - thresholds_A_opt))]],
                     color='green', s=100, zorder=5,
                     label='Minimum gap point')
 axes[1, 1].set_xlabel('Threshold τ')
@@ -314,15 +282,11 @@ axes[1, 1].set_title('Equalised Odds Violation:\n'
 axes[1, 1].legend(fontsize=8)
 axes[1, 1].grid(True, alpha=0.3)
 
-plt.suptitle('Threshold Optimisation: Bayesian Loss Framework\n'
-             'From Probabilities to Decisions',
+plt.suptitle(f'Random Forest ResultsThreshold Optimisation: Bayesian Loss Framework\n{FIGURE_TITLE_SUFFIX}',
              fontsize=12, fontweight='bold')
 
-plt.tight_layout()
-plt.savefig('visualisations/outputs/threshold_optimisation.png',
-            dpi=150, bbox_inches='tight')
+save_plot('threshold_optimisation.png')
 plt.show()
-print("Plot saved to visualisations/outputs/threshold_optimisation.png")
 
 # ─────────────────────────────────────────
 # 7. FINAL SUMMARY

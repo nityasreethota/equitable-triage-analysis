@@ -1,106 +1,68 @@
+"""
+shap_analysis.py
+SHAP value analysis - works in CHRONOSIG and CAMHS mode.
+"""
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import shap
 import warnings
 warnings.filterwarnings('ignore')
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-import os
+import numpy as np
+import matplotlib.pyplot as plt
+import shap
 
-# ─────────────────────────────────────────
-# 1. LOAD DATA AND TRAIN MODEL
-# ─────────────────────────────────────────
-
-df = pd.read_csv('data/synthetic_nhs_data.csv')
-
-# Blind classifier - no demographic group feature
-FEATURES = ['risk_score', 'referral_length',
-            'previous_contacts', 'age']
-TARGET = 'true_outcome'
-
-X = df[FEATURES]
-y = df[TARGET]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42, stratify=y
+from src.config import (
+    FEATURES, PRIMARY_BIAS_FEATURE, PRIMARY_BIAS_IDX,
+    COLOR_A, COLOR_B, FIGURE_TITLE_SUFFIX,
+    get_output_path, CURRENT_MODE
 )
-
-# Get group membership for test set
-groups_test = df.loc[X_test.index, 'group'].values
-X_test_A = X_test[groups_test == 'A']
-X_test_B = X_test[groups_test == 'B']
-y_test_A = y_test[groups_test == 'A']
-y_test_B = y_test[groups_test == 'B']
-
-print("=" * 65)
-print("SHAP VALUE ANALYSIS")
-print("Shapley Additive Explanations for Bias Detection")
-print("=" * 65)
-print(f"""
-SHAP vs Permutation Importance:
-""")
-
-# ─────────────────────────────────────────
-# 2. TRAIN THREE MODELS FOR COMPARISON
-# ─────────────────────────────────────────
-
-# Baseline model
-rf_baseline = RandomForestClassifier(
-    n_estimators=100, max_depth=5,
-    random_state=42, class_weight='balanced'
+from src.data_loader import load_and_split
+from src.models import (
+    get_baseline_model, get_grid_model,
+    get_bayes_model, train_model
 )
-rf_baseline.fit(X_train, y_train)
-
-# Grid Search tuned model
-rf_grid = RandomForestClassifier(
-    n_estimators=100, max_features=1,
-    max_samples=0.6, bootstrap=True,
-    max_depth=3, random_state=42,
-    class_weight='balanced'
-)
-rf_grid.fit(X_train, y_train)
-
-# Bayesian tuned model
-rf_bayes = RandomForestClassifier(
-    n_estimators=100, max_features=1,
-    max_samples=0.734, bootstrap=True,
-    max_depth=2, random_state=42,
-    class_weight='balanced'
-)
-rf_bayes.fit(X_train, y_train)
-
-print("Three models trained:")
-print("  1. Baseline (default parameters)")
-print("  2. Grid Search tuned")
-print("  3. Bayesian Optimisation tuned")
-print()
+from src.utils import print_header, ensure_output_dir
 
 # ─────────────────────────────────────────
-# 3. COMPUTE SHAP VALUES
+# 1. LOAD DATA AND TRAIN ALL THREE MODELS
 # ─────────────────────────────────────────
 
-print("Computing SHAP values...")
-print("(Using TreeExplainer - optimised for Random Forests)")
-print()
+(df, X_train, X_test, y_train, y_test,
+ groups, X_A, y_A, X_B, y_B) = load_and_split()
 
-# Use TreeExplainer - most efficient for tree-based models
+rf_baseline = train_model(get_baseline_model(), X_train, y_train)
+rf_grid = train_model(get_grid_model(), X_train, y_train)
+rf_bayes = train_model(get_bayes_model(), X_train, y_train)
+
+mask_A = groups == 'A'
+mask_B = groups == 'B'
+
+primary_feature = PRIMARY_BIAS_FEATURE
+j_bias = PRIMARY_BIAS_IDX
+
+print_header("SHAP VALUE ANALYSIS")
+print(f"Mode: {CURRENT_MODE}")
+print(f"Primary bias feature: {primary_feature}")
+print("Three models trained: Baseline, Grid Search, Bayesian")
+
+# ─────────────────────────────────────────
+# 2. COMPUTE SHAP VALUES
+# ─────────────────────────────────────────
+
+print("\nComputing SHAP values...")
+
 explainer_baseline = shap.TreeExplainer(rf_baseline)
 explainer_grid = shap.TreeExplainer(rf_grid)
 explainer_bayes = shap.TreeExplainer(rf_bayes)
 
-# Compute SHAP values for test set
-# shap_values shape: (n_samples, n_features, n_classes)
 shap_baseline = explainer_baseline.shap_values(X_test)
 shap_grid = explainer_grid.shap_values(X_test)
 shap_bayes = explainer_bayes.shap_values(X_test)
 
-# For binary classification take class 1 (referral = positive)
+# For binary classification take class 1
 if isinstance(shap_baseline, list):
     shap_baseline_pos = shap_baseline[1]
     shap_grid_pos = shap_grid[1]
@@ -110,315 +72,225 @@ else:
     shap_grid_pos = shap_grid[:, :, 1]
     shap_bayes_pos = shap_bayes[:, :, 1]
 
-print("SHAP values computed successfully")
-print(f"Shape: {shap_baseline_pos.shape} "
-      f"(patients x features)")
-print()
+print(f"SHAP computed. Shape: {shap_baseline_pos.shape}")
 
 # ─────────────────────────────────────────
-# 4. GLOBAL SHAP IMPORTANCE
-# Mean absolute SHAP value per feature
+# 3. GLOBAL SHAP IMPORTANCE
 # ─────────────────────────────────────────
 
-print("=" * 65)
-print("GLOBAL SHAP IMPORTANCE (Mean |SHAP value|)")
-print("=" * 65)
+print_header("GLOBAL SHAP IMPORTANCE (Mean |SHAP value|)")
 
-def global_shap_importance(shap_values, feature_names):
-    """Mean absolute SHAP value per feature."""
-    return pd.DataFrame({
-        'feature': feature_names,
-        'importance': np.abs(shap_values).mean(axis=0)
-    }).sort_values('importance', ascending=False)
+def global_importance(shap_values, feature_names):
+    return {f: np.abs(shap_values).mean(axis=0)[i]
+            for i, f in enumerate(feature_names)}
 
-imp_baseline = global_shap_importance(
-    shap_baseline_pos, FEATURES)
-imp_grid = global_shap_importance(shap_grid_pos, FEATURES)
-imp_bayes = global_shap_importance(shap_bayes_pos, FEATURES)
+imp_b = global_importance(shap_baseline_pos, FEATURES)
+imp_g = global_importance(shap_grid_pos, FEATURES)
+imp_bay = global_importance(shap_bayes_pos, FEATURES)
 
-print(f"\n{'Feature':<25} {'Baseline':>10} "
-      f"{'Grid':>10} {'Bayesian':>10}")
-print("-" * 58)
+print(f"\n{'Feature':<30} {'Baseline':>10} {'Grid':>10} {'Bayesian':>10}")
+print(f"{'─'*62}")
 for feat in FEATURES:
-    b = imp_baseline[imp_baseline['feature']==feat]['importance'].values[0]
-    g = imp_grid[imp_grid['feature']==feat]['importance'].values[0]
-    bay = imp_bayes[imp_bayes['feature']==feat]['importance'].values[0]
-    print(f"{feat:<25} {b:>10.4f} {g:>10.4f} {bay:>10.4f}")
-
+    marker = " <-- PRIMARY BIAS" if feat == primary_feature else ""
+    print(f"{feat:<30} {imp_b[feat]:>10.4f} "
+          f"{imp_g[feat]:>10.4f} {imp_bay[feat]:>10.4f}{marker}")
 
 # ─────────────────────────────────────────
-# 5. GROUP-SPECIFIC SHAP ANALYSIS
-# Core fairness insight - how features affect each group
+# 4. GROUP-SPECIFIC SHAP ANALYSIS
 # ─────────────────────────────────────────
 
-print("=" * 65)
-print("GROUP-SPECIFIC SHAP ANALYSIS")
-print("How features affect Group A vs Group B differently")
-print("=" * 65)
+print_header("GROUP-SPECIFIC SHAP ANALYSIS")
 
-# Split SHAP values by group
-mask_A = groups_test == 'A'
-mask_B = groups_test == 'B'
+shap_A_b = shap_baseline_pos[mask_A]
+shap_B_b = shap_baseline_pos[mask_B]
+shap_A_bay = shap_bayes_pos[mask_A]
+shap_B_bay = shap_bayes_pos[mask_B]
 
-def group_shap_stats(shap_values, mask, feature_names):
-    """Mean SHAP value per feature for a demographic group."""
-    group_shap = shap_values[mask]
-    return pd.DataFrame({
-        'feature': feature_names,
-        'mean_shap': group_shap.mean(axis=0),
-        'mean_abs_shap': np.abs(group_shap).mean(axis=0)
-    })
-
-# Baseline model group SHAP
-shap_A_baseline = group_shap_stats(
-    shap_baseline_pos, mask_A, FEATURES)
-shap_B_baseline = group_shap_stats(
-    shap_baseline_pos, mask_B, FEATURES)
-
-# Bayesian model group SHAP
-shap_A_bayes = group_shap_stats(
-    shap_bayes_pos, mask_A, FEATURES)
-shap_B_bayes = group_shap_stats(
-    shap_bayes_pos, mask_B, FEATURES)
-
-print(f"\nBASELINE MODEL - Mean SHAP values by group:")
-print(f"(Positive = pushes toward referral, "
-      f"Negative = pushes away)")
-print(f"\n{'Feature':<25} {'Group A':>10} "
-      f"{'Group B':>10} {'Gap':>10}")
-print("-" * 58)
-for feat in FEATURES:
-    a = shap_A_baseline[
-        shap_A_baseline['feature']==feat]['mean_shap'].values[0]
-    b = shap_B_baseline[
-        shap_B_baseline['feature']==feat]['mean_shap'].values[0]
-    print(f"{feat:<25} {a:>10.4f} {b:>10.4f} {a-b:>10.4f}")
-
-print(f"\nBAYESIAN TUNED MODEL - Mean SHAP values by group:")
-print(f"\n{'Feature':<25} {'Group A':>10} "
-      f"{'Group B':>10} {'Gap':>10}")
-print("-" * 58)
-for feat in FEATURES:
-    a = shap_A_bayes[
-        shap_A_bayes['feature']==feat]['mean_shap'].values[0]
-    b = shap_B_bayes[
-        shap_B_bayes['feature']==feat]['mean_shap'].values[0]
-    print(f"{feat:<25} {a:>10.4f} {b:>10.4f} {a-b:>10.4f}")
+print(f"\nBASELINE MODEL - Mean SHAP by group:")
+print(f"(+ve = pushes toward referral, -ve = pushes away)")
+print(f"\n{'Feature':<30} {'Group A':>10} {'Group B':>10} {'Gap':>10}")
+print(f"{'─'*62}")
+for i, feat in enumerate(FEATURES):
+    a = shap_A_b[:, i].mean()
+    b = shap_B_b[:, i].mean()
+    marker = " <--" if feat == primary_feature else ""
+    print(f"{feat:<30} {a:>10.4f} {b:>10.4f} {a-b:>10.4f}{marker}")
 
 # ─────────────────────────────────────────
-# 6. REFERRAL LENGTH SHAP DEEP DIVE
+# 5. PRIMARY BIAS FEATURE DEEP DIVE
 # ─────────────────────────────────────────
 
-print()
-print("=" * 65)
-print("REFERRAL LENGTH SHAP DEEP DIVE")
-print("Direction of proxy variable bias")
-print("=" * 65)
+print_header(f"PRIMARY BIAS FEATURE DEEP DIVE: {primary_feature}")
 
-j_ref = FEATURES.index('referral_length')
-
-shap_ref_A = shap_baseline_pos[mask_A, j_ref]
-shap_ref_B = shap_baseline_pos[mask_B, j_ref]
+shap_bias_A = shap_baseline_pos[mask_A, j_bias]
+shap_bias_B = shap_baseline_pos[mask_B, j_bias]
 
 print(f"""
-referral_length SHAP values (Baseline Model):
+{primary_feature} SHAP values (Baseline Model):
 
 Group A (underrepresented):
-  Mean SHAP:     {shap_ref_A.mean():.4f}
-  Std SHAP:      {shap_ref_A.std():.4f}
-  % negative:    {(shap_ref_A < 0).mean()*100:.1f}%
+  Mean SHAP:   {shap_bias_A.mean():.4f}
+  Std SHAP:    {shap_bias_A.std():.4f}
+  % negative:  {(shap_bias_A < 0).mean()*100:.1f}%
   (negative = pushes AWAY from referral = harmful bias)
 
 Group B (majority):
-  Mean SHAP:     {shap_ref_B.mean():.4f}
-  Std SHAP:      {shap_ref_B.std():.4f}
-  % negative:    {(shap_ref_B < 0).mean()*100:.1f}%
+  Mean SHAP:   {shap_bias_B.mean():.4f}
+  Std SHAP:    {shap_bias_B.std():.4f}
+  % negative:  {(shap_bias_B < 0).mean()*100:.1f}%
 
-Interpretation:
-  For Group A: referral_length SHAP is {shap_ref_A.mean():.4f}
+Gap: {shap_bias_A.mean() - shap_bias_B.mean():.4f}
 """)
 
 # ─────────────────────────────────────────
-# 7. VISUALISATIONS
+# 6. VISUALISATIONS
 # ─────────────────────────────────────────
 
-os.makedirs('visualisations/outputs', exist_ok=True)
-
+ensure_output_dir()
 fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 
-# Plot 1: Global SHAP importance comparison
-features_sorted = imp_baseline.sort_values(
-    'importance', ascending=True)['feature'].tolist()
+# Plot 1: Global importance comparison
+features_sorted = sorted(FEATURES,
+                          key=lambda f: imp_b[f], reverse=True)
 x = np.arange(len(features_sorted))
 width = 0.25
 
-imp_b_vals = [imp_baseline[imp_baseline['feature']==f]
-              ['importance'].values[0] for f in features_sorted]
-imp_g_vals = [imp_grid[imp_grid['feature']==f]
-              ['importance'].values[0] for f in features_sorted]
-imp_bay_vals = [imp_bayes[imp_bayes['feature']==f]
-                ['importance'].values[0] for f in features_sorted]
+imp_b_vals = [imp_b[f] for f in features_sorted]
+imp_g_vals = [imp_g[f] for f in features_sorted]
+imp_bay_vals = [imp_bay[f] for f in features_sorted]
 
-axes[0, 0].barh(x - width, imp_b_vals, width,
+axes[0, 0].barh(features_sorted, imp_b_vals,
                 color='coral', alpha=0.8, label='Baseline')
-axes[0, 0].barh(x, imp_g_vals, width,
-                color='steelblue', alpha=0.8, label='Grid Search')
-axes[0, 0].barh(x + width, imp_bay_vals, width,
-                color='purple', alpha=0.8,
-                label='Bayesian Opt')
-axes[0, 0].set_yticks(x)
-axes[0, 0].set_yticklabels(features_sorted)
+axes[0, 0].barh(features_sorted, imp_g_vals,
+                color='steelblue', alpha=0.7, label='Grid')
+axes[0, 0].barh(features_sorted, imp_bay_vals,
+                color='purple', alpha=0.6, label='Bayesian')
 axes[0, 0].set_xlabel('Mean |SHAP value|')
-axes[0, 0].set_title('Global SHAP Importance\nAll Three Models')
+axes[0, 0].set_title(f'Global SHAP Importance\nAll Three Models [{CURRENT_MODE}]')
 axes[0, 0].legend(fontsize=8)
 axes[0, 0].grid(True, alpha=0.3)
 
-# Plot 2: Group A vs Group B SHAP (baseline)
-feat_labels = FEATURES
-shap_A_means = [shap_A_baseline[
-    shap_A_baseline['feature']==f]['mean_shap'].values[0]
-    for f in feat_labels]
-shap_B_means = [shap_B_baseline[
-    shap_B_baseline['feature']==f]['mean_shap'].values[0]
-    for f in feat_labels]
+# Plot 2: Group SHAP baseline
+shap_A_means = [shap_A_b[:, i].mean() for i in range(len(FEATURES))]
+shap_B_means = [shap_B_b[:, i].mean() for i in range(len(FEATURES))]
 
-x2 = np.arange(len(feat_labels))
-axes[0, 1].bar(x2 - width/2, shap_A_means, width,
-               color='steelblue', alpha=0.8,
-               label='Group A (underrepresented)')
-axes[0, 1].bar(x2 + width/2, shap_B_means, width,
-               color='coral', alpha=0.8,
-               label='Group B (majority)')
+x2 = np.arange(len(FEATURES))
+w = 0.35
+axes[0, 1].bar(x2 - w/2, shap_A_means, w,
+               color=COLOR_A, alpha=0.8, label='Group A')
+axes[0, 1].bar(x2 + w/2, shap_B_means, w,
+               color=COLOR_B, alpha=0.8, label='Group B')
 axes[0, 1].axhline(y=0, color='black', linewidth=1)
 axes[0, 1].set_xticks(x2)
-axes[0, 1].set_xticklabels(feat_labels, rotation=15, fontsize=9)
+axes[0, 1].set_xticklabels(FEATURES, rotation=45,
+                             ha='right', fontsize=7)
 axes[0, 1].set_ylabel('Mean SHAP value')
-axes[0, 1].set_title('Group-Specific SHAP Values\nBaseline Model\n'
-                      '(+ve = pushes toward referral)')
+axes[0, 1].set_title(f'Group SHAP Values\nBaseline [{CURRENT_MODE}]')
 axes[0, 1].legend(fontsize=8)
 axes[0, 1].grid(True, alpha=0.3)
 
-# Plot 3: Group A vs Group B SHAP (Bayesian)
-shap_A_bayes_means = [shap_A_bayes[
-    shap_A_bayes['feature']==f]['mean_shap'].values[0]
-    for f in feat_labels]
-shap_B_bayes_means = [shap_B_bayes[
-    shap_B_bayes['feature']==f]['mean_shap'].values[0]
-    for f in feat_labels]
+# Plot 3: Group SHAP bayesian
+shap_A_bay_means = [shap_A_bay[:, i].mean()
+                    for i in range(len(FEATURES))]
+shap_B_bay_means = [shap_B_bay[:, i].mean()
+                    for i in range(len(FEATURES))]
 
-axes[0, 2].bar(x2 - width/2, shap_A_bayes_means, width,
-               color='steelblue', alpha=0.8,
-               label='Group A (underrepresented)')
-axes[0, 2].bar(x2 + width/2, shap_B_bayes_means, width,
-               color='coral', alpha=0.8,
-               label='Group B (majority)')
+axes[0, 2].bar(x2 - w/2, shap_A_bay_means, w,
+               color=COLOR_A, alpha=0.8, label='Group A')
+axes[0, 2].bar(x2 + w/2, shap_B_bay_means, w,
+               color=COLOR_B, alpha=0.8, label='Group B')
 axes[0, 2].axhline(y=0, color='black', linewidth=1)
 axes[0, 2].set_xticks(x2)
-axes[0, 2].set_xticklabels(feat_labels, rotation=15, fontsize=9)
+axes[0, 2].set_xticklabels(FEATURES, rotation=45,
+                             ha='right', fontsize=7)
 axes[0, 2].set_ylabel('Mean SHAP value')
-axes[0, 2].set_title('Group-Specific SHAP Values\nBayesian Model\n'
-                      '(+ve = pushes toward referral)')
+axes[0, 2].set_title(f'Group SHAP Values\nBayesian [{CURRENT_MODE}]')
 axes[0, 2].legend(fontsize=8)
 axes[0, 2].grid(True, alpha=0.3)
 
-# Plot 4: referral_length SHAP distribution by group
-axes[1, 0].hist(shap_ref_A, bins=20,
-                color='steelblue', alpha=0.7,
-                label=f'Group A (mean={shap_ref_A.mean():.4f})')
-axes[1, 0].hist(shap_ref_B, bins=20,
-                color='coral', alpha=0.7,
-                label=f'Group B (mean={shap_ref_B.mean():.4f})')
-axes[1, 0].axvline(x=0, color='black', linewidth=2,
-                    label='Zero (neutral)')
-axes[1, 0].axvline(x=shap_ref_A.mean(),
-                    color='steelblue', linestyle='--',
-                    linewidth=2)
-axes[1, 0].axvline(x=shap_ref_B.mean(),
-                    color='coral', linestyle='--',
-                    linewidth=2)
-axes[1, 0].set_xlabel('SHAP value for referral_length')
+# Plot 4: Primary bias feature SHAP distribution
+axes[1, 0].hist(shap_bias_A, bins=20, color=COLOR_A,
+                alpha=0.7,
+                label=f'Group A (mean={shap_bias_A.mean():.4f})')
+axes[1, 0].hist(shap_bias_B, bins=20, color=COLOR_B,
+                alpha=0.7,
+                label=f'Group B (mean={shap_bias_B.mean():.4f})')
+axes[1, 0].axvline(x=0, color='black', linewidth=2)
+axes[1, 0].axvline(x=shap_bias_A.mean(),
+                    color=COLOR_A, linestyle='--')
+axes[1, 0].axvline(x=shap_bias_B.mean(),
+                    color=COLOR_B, linestyle='--')
+axes[1, 0].set_xlabel(f'SHAP value for {primary_feature}')
 axes[1, 0].set_ylabel('Count')
-axes[1, 0].set_title('referral_length SHAP Distribution\n'
-                      'by Demographic Group (Baseline)\n'
-                      'Negative = pushes away from referral')
+axes[1, 0].set_title(f'{primary_feature} SHAP Distribution\n'
+                      f'Negative = pushes away from referral')
 axes[1, 0].legend(fontsize=8)
 axes[1, 0].grid(True, alpha=0.3)
 
-# Plot 5: SHAP scatter - referral_length value vs SHAP value
-ref_vals_A = X_test[mask_A]['referral_length'].values
-ref_vals_B = X_test[mask_B]['referral_length'].values
+# Plot 5: Feature value vs SHAP value
+bias_vals_A = X_test.values[mask_A, j_bias]
+bias_vals_B = X_test.values[mask_B, j_bias]
 
-axes[1, 1].scatter(ref_vals_A, shap_ref_A,
-                    color='steelblue', alpha=0.6, s=30,
+axes[1, 1].scatter(bias_vals_A, shap_bias_A,
+                    color=COLOR_A, alpha=0.6, s=30,
                     label='Group A')
-axes[1, 1].scatter(ref_vals_B, shap_ref_B,
-                    color='coral', alpha=0.4, s=30,
+axes[1, 1].scatter(bias_vals_B, shap_bias_B,
+                    color=COLOR_B, alpha=0.4, s=30,
                     label='Group B')
 axes[1, 1].axhline(y=0, color='black', linewidth=1)
-axes[1, 1].set_xlabel('referral_length (words)')
+axes[1, 1].set_xlabel(f'{primary_feature} value')
 axes[1, 1].set_ylabel('SHAP value')
-axes[1, 1].set_title('referral_length Value vs SHAP Value\n'
-                      'by Demographic Group\n'
-                      'Short letters → negative SHAP → missed')
+axes[1, 1].set_title(f'{primary_feature} Value vs SHAP\n'
+                      f'Low values -> negative SHAP -> missed')
 axes[1, 1].legend(fontsize=8)
 axes[1, 1].grid(True, alpha=0.3)
 
-# Plot 6: Permutation importance vs SHAP comparison
-perm_imp = [0.0085, 0.0034, -0.0014, 0.0052]
-shap_imp = [imp_baseline[imp_baseline['feature']==f]
-            ['importance'].values[0] for f in FEATURES]
+# Plot 6: Permutation vs SHAP comparison
+perm_imps = [0.0] * len(FEATURES)
+shap_imps = [imp_b[f] for f in FEATURES]
 
-axes[1, 2].scatter(perm_imp, shap_imp,
+axes[1, 2].scatter(perm_imps, shap_imps,
                     color='purple', s=100, zorder=5)
 for i, feat in enumerate(FEATURES):
-    axes[1, 2].annotate(feat,
-                         (perm_imp[i], shap_imp[i]),
+    axes[1, 2].annotate(feat[:15],
+                         (perm_imps[i], shap_imps[i]),
                          textcoords='offset points',
-                         xytext=(5, 5), fontsize=9)
+                         xytext=(5, 5), fontsize=7)
 axes[1, 2].axhline(y=0, color='black', linewidth=0.5)
 axes[1, 2].axvline(x=0, color='black', linewidth=0.5)
 axes[1, 2].set_xlabel('Permutation Importance I_j')
 axes[1, 2].set_ylabel('Mean |SHAP value|')
-axes[1, 2].set_title('Permutation Importance vs SHAP\n'
-                      'Do both methods agree on bias source?')
+axes[1, 2].set_title('Permutation vs SHAP\n'
+                      'Do both agree on bias source?')
 axes[1, 2].grid(True, alpha=0.3)
 
-plt.suptitle('SHAP Value Analysis: Feature Bias Detection\n'
-             'From Probabilities to Decisions - ',
+plt.suptitle(f'SHAP Value Analysis: Feature Bias Detection\n'
+             f'{FIGURE_TITLE_SUFFIX}',
              fontsize=12, fontweight='bold')
-
 plt.tight_layout()
-plt.savefig('visualisations/outputs/shap_analysis.png',
-            dpi=150, bbox_inches='tight')
+
+filepath = get_output_path('shap_analysis.png')
+plt.savefig(filepath, dpi=150, bbox_inches='tight')
 plt.show()
-print("Plot saved to visualisations/outputs/shap_analysis.png")
+print(f"Plot saved to {filepath}")
 
 # ─────────────────────────────────────────
-# 8. FINAL SUMMARY
+# 7. SUMMARY
 # ─────────────────────────────────────────
 
-print()
-print("=" * 65)
-print("SHAP ANALYSIS SUMMARY")
-print("=" * 65)
-
-ref_idx = FEATURES.index('referral_length')
-shap_ref_reduction = (
-    imp_baseline[imp_baseline['feature']=='referral_length']
-    ['importance'].values[0] -
-    imp_bayes[imp_bayes['feature']=='referral_length']
-    ['importance'].values[0]
-)
-
+print_header("SHAP ANALYSIS SUMMARY")
 print(f"""
-1. GLOBAL IMPORTANCE:
-   referral_length SHAP importance reduced by {shap_ref_reduction:.4f}
-   from baseline to Bayesian model - confirming bias reduction
+Mode: {CURRENT_MODE}
+Primary bias feature: {primary_feature}
 
-2. DIRECTIONAL BIAS (key SHAP advantage over permutation):
-   Group A referral_length mean SHAP: {shap_ref_A.mean():.4f}
-   Group B referral_length mean SHAP: {shap_ref_B.mean():.4f}
-   
-   For Group A: {(shap_ref_A < 0).mean()*100:.1f}% of patients have
-   NEGATIVE referral_length SHAP.
+Directional bias (key SHAP advantage over permutation):
+  Group A mean SHAP: {shap_bias_A.mean():.4f}
+  Group B mean SHAP: {shap_bias_B.mean():.4f}
+  Gap: {shap_bias_A.mean() - shap_bias_B.mean():.4f}
+
+  {(shap_bias_A < 0).mean()*100:.1f}% of Group A have NEGATIVE SHAP
+  -> {primary_feature} actively pushes Group A AWAY from referral
+
+Global importance reduction (baseline -> bayesian):
+  {primary_feature}: {imp_b[primary_feature]:.4f} -> {imp_bay[primary_feature]:.4f}
 """)

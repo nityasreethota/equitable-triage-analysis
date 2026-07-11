@@ -1,169 +1,103 @@
+"""
+hyperparameter_tuning.py
+Grid Search hyperparameter tuning - CHRONOSIG and CAMHS mode.
+"""
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import warnings
+warnings.filterwarnings('ignore')
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 import itertools
-import os
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+
+from src.config import (
+    FEATURES, PRIMARY_BIAS_FEATURE, PRIMARY_BIAS_IDX,
+    GRID_SEARCH_PARAMS, COLOR_A, COLOR_B,
+    FIGURE_TITLE_SUFFIX, get_output_path,
+    CURRENT_MODE, DATA_DIR, RANDOM_STATE
+)
+from src.data_loader import load_and_split
+from src.models import get_baseline_model, train_model
+from src.metrics import compute_tpr_gap
+from src.permutation import permutation_importance_single
+from src.utils import print_header, ensure_output_dir
 
 # ─────────────────────────────────────────
 # 1. LOAD DATA
 # ─────────────────────────────────────────
 
-df = pd.read_csv('data/synthetic_nhs_data.csv')
+(df, X_train, X_test, y_train, y_test,
+ groups, X_A, y_A, X_B, y_B) = load_and_split()
 
-# Blind classifier
-FEATURES = ['risk_score', 'referral_length',
-            'previous_contacts', 'age']
-TARGET = 'true_outcome'
+X_test_arr = X_test.values
+y_test_arr = y_test.values
+j_bias = PRIMARY_BIAS_IDX
+primary_feature = PRIMARY_BIAS_FEATURE
 
-X = df[FEATURES]
-y = df[TARGET]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42, stratify=y
-)
-
-groups_test = df.loc[X_test.index, 'group'].values
-X_test_A = X_test.values[groups_test == 'A']
-y_test_A = y_test.values[groups_test == 'A']
-X_test_B = X_test.values[groups_test == 'B']
-y_test_B = y_test.values[groups_test == 'B']
-
-print("=" * 65)
-print("HYPERPARAMETER TUNING - GRID SEARCH")
-print("Reducing internal model bias via parameter optimisation")
-print("=" * 65)
+print_header("HYPERPARAMETER TUNING - GRID SEARCH")
+print(f"Mode: {CURRENT_MODE}")
+print(f"Primary bias feature: {primary_feature}")
 
 # ─────────────────────────────────────────
 # 2. HELPER FUNCTIONS
 # ─────────────────────────────────────────
 
-def classification_error(y_true, y_pred):
-    return np.mean(y_true != y_pred)
+from src.metrics import classification_error
 
-def permutation_importance_referral(rf, X_test_arr, y_test_arr,
-                                     feature_idx, n_trees=50):
-    """
-    Calculate permutation importance for referral_length
-    using formula: I_j = (1/T) * sum(E_t^j - E_t)
-    Uses subset of trees for speed during grid search.
-    """
-    diffs = []
-    for t, tree in enumerate(rf.estimators_[:n_trees]):
-        y_pred_orig = tree.predict(X_test_arr)
-        E_t = classification_error(y_test_arr, y_pred_orig)
+def perm_imp_bias(rf, n_trees=30):
+    I_j, _ = permutation_importance_single(
+        rf, X_test_arr, y_test_arr, j_bias, n_trees
+    )
+    return I_j
 
-        X_shuf = X_test_arr.copy()
-        np.random.seed(t)
-        np.random.shuffle(X_shuf[:, feature_idx])
-
-        y_pred_shuf = tree.predict(X_shuf)
-        E_t_j = classification_error(y_test_arr, y_pred_shuf)
-        diffs.append(E_t_j - E_t)
-    return np.mean(diffs)
-
-def compute_tpr_gap(rf, X_test_A, y_test_A,
-                     X_test_B, y_test_B, threshold=0.4):
-    prob_A = rf.predict_proba(X_test_A)[:, 1]
-    prob_B = rf.predict_proba(X_test_B)[:, 1]
-
-    D_A = (prob_A >= threshold).astype(int)
-    D_B = (prob_B >= threshold).astype(int)
-
-    TP_A = ((D_A == 1) & (y_test_A == 1)).sum()
-    FN_A = ((D_A == 0) & (y_test_A == 1)).sum()
-    TP_B = ((D_B == 1) & (y_test_B == 1)).sum()
-    FN_B = ((D_B == 0) & (y_test_B == 1)).sum()
-
-    TPR_A = TP_A / (TP_A + FN_A) if (TP_A + FN_A) > 0 else 0
-    TPR_B = TP_B / (TP_B + FN_B) if (TP_B + FN_B) > 0 else 0
-
-    return abs(TPR_B - TPR_A), TPR_A, TPR_B
+def tpr_gap_uniform(rf, threshold=0.4):
+    gap, tpr_a, tpr_b = compute_tpr_gap(
+        rf, X_A, y_A, X_B, y_B, threshold
+    )
+    return gap, tpr_a, tpr_b
 
 # ─────────────────────────────────────────
-# 3. BASELINE - INITIAL MODEL
+# 3. BASELINE
 # ─────────────────────────────────────────
 
-rf_baseline = RandomForestClassifier(
-    n_estimators=100, max_depth=5,
-    random_state=42, class_weight='balanced'
-)
-rf_baseline.fit(X_train, y_train)
+rf_baseline = train_model(get_baseline_model(), X_train, y_train)
+baseline_imp = perm_imp_bias(rf_baseline)
+baseline_gap, baseline_tpr_A, baseline_tpr_B = tpr_gap_uniform(rf_baseline)
 
-j_ref = FEATURES.index('referral_length')
-X_test_arr = X_test.values
-
-baseline_imp = permutation_importance_referral(
-    rf_baseline, X_test_arr, y_test.values, j_ref
-)
-baseline_gap, baseline_tpr_A, baseline_tpr_B = compute_tpr_gap(
-    rf_baseline, X_test_A, y_test_A, X_test_B, y_test_B
-)
-
-print(f"BASELINE (default parameters):")
-print(f"  referral_length I_j: {baseline_imp:.4f}")
-print(f"  TPR Group A:         {baseline_tpr_A:.3f}")
-print(f"  TPR Group B:         {baseline_tpr_B:.3f}")
-print(f"  TPR Gap:             {baseline_gap:.3f}")
-print()
+print(f"\nBaseline:")
+print(f"  {primary_feature} I_j: {baseline_imp:.4f}")
+print(f"  TPR gap: {baseline_gap:.3f}")
+print(f"  TPR A: {baseline_tpr_A:.3f}, TPR B: {baseline_tpr_B:.3f}")
 
 # ─────────────────────────────────────────
 # 4. GRID SEARCH
 # ─────────────────────────────────────────
 
-# Parameter grid
-param_grid = {
-    'max_features': [1, 2, 3, 'sqrt'],
-    'max_samples':  [0.5, 0.6, 0.7, 1.0],
-    'bootstrap':    [True, False],
-    'max_depth':    [3, 5, 7]
-}
-
-# Generate all combinations
-keys = list(param_grid.keys())
-values = list(param_grid.values())
+keys = list(GRID_SEARCH_PARAMS.keys())
+values = list(GRID_SEARCH_PARAMS.values())
 combinations = list(itertools.product(*values))
 
-print(f"Grid search over {len(combinations)} parameter combinations...")
-print(f"Parameters: {keys}")
-print()
+print(f"\nGrid search: {len(combinations)} combinations...")
 
 results = []
-total = len(combinations)
-
 for i, combo in enumerate(combinations):
     params = dict(zip(keys, combo))
-
-    # Skip invalid combinations
     if not params['bootstrap'] and params['max_samples'] != 1.0:
         continue
-
     try:
         rf = RandomForestClassifier(
-            n_estimators=100,
-            random_state=42,
-            class_weight='balanced',
-            **params
+            n_estimators=100, random_state=RANDOM_STATE,
+            class_weight='balanced', **params
         )
         rf.fit(X_train, y_train)
-
-        # Permutation importance for referral_length
-        imp = permutation_importance_referral(
-            rf, X_test_arr, y_test.values, j_ref, n_trees=30
-        )
-
-        # TPR gap
-        gap, tpr_a, tpr_b = compute_tpr_gap(
-            rf, X_test_A, y_test_A, X_test_B, y_test_B
-        )
-
+        imp = perm_imp_bias(rf, n_trees=20)
+        gap, tpr_a, tpr_b = tpr_gap_uniform(rf)
         results.append({
             'max_features': params['max_features'],
             'max_samples': params['max_samples'],
@@ -174,193 +108,91 @@ for i, combo in enumerate(combinations):
             'tpr_A': tpr_a,
             'tpr_B': tpr_b
         })
-
-        if (i + 1) % 10 == 0:
-            print(f"  Progress: {i+1}/{total} combinations tested...")
-
-    except Exception as e:
+        if (i+1) % 10 == 0:
+            print(f"  {i+1}/{len(combinations)} done...")
+    except Exception:
         continue
 
 results_df = pd.DataFrame(results)
-print(f"\nCompleted: {len(results_df)} valid combinations tested")
+print(f"Completed: {len(results_df)} valid combinations")
 
 # ─────────────────────────────────────────
-# 5. FIND BEST PARAMETERS
+# 5. BEST PARAMETERS
 # ─────────────────────────────────────────
-
-print()
-print("=" * 65)
-print("GRID SEARCH RESULTS")
-print("=" * 65)
-
-best_by_importance = results_df.loc[
-    results_df['referral_importance'].idxmin()
-]
-
-best_by_gap = results_df.loc[
-    results_df['tpr_gap'].idxmin()
-]
 
 results_df['combined_score'] = (
-    results_df['referral_importance'] / results_df['referral_importance'].max() +
-    results_df['tpr_gap'] / results_df['tpr_gap'].max()
+    results_df['referral_importance'] /
+    results_df['referral_importance'].max() +
+    results_df['tpr_gap'] /
+    results_df['tpr_gap'].max()
 )
-best_combined = results_df.loc[
-    results_df['combined_score'].idxmin()
-]
+best = results_df.loc[results_df['combined_score'].idxmin()]
 
-print(f"\n1. BEST by referral_length importance (minimise proxy reliance):")
-print(f"   max_features={best_by_importance['max_features']}, "
-      f"max_samples={best_by_importance['max_samples']}, "
-      f"bootstrap={best_by_importance['bootstrap']}, "
-      f"max_depth={int(best_by_importance['max_depth'])}")
-print(f"   referral_length I_j: {best_by_importance['referral_importance']:.4f} "
-      f"(baseline: {baseline_imp:.4f})")
-print(f"   TPR gap: {best_by_importance['tpr_gap']:.3f}")
-
-print(f"\n2. BEST by TPR gap (minimise fairness gap):")
-print(f"   max_features={best_by_gap['max_features']}, "
-      f"max_samples={best_by_gap['max_samples']}, "
-      f"bootstrap={best_by_gap['bootstrap']}, "
-      f"max_depth={int(best_by_gap['max_depth'])}")
-print(f"   referral_length I_j: {best_by_gap['referral_importance']:.4f}")
-print(f"   TPR gap: {best_by_gap['tpr_gap']:.3f} "
-      f"(baseline: {baseline_gap:.3f})")
-
-print(f"\n3. BEST combined score (balance both objectives):")
-print(f"   max_features={best_combined['max_features']}, "
-      f"max_samples={best_combined['max_samples']}, "
-      f"bootstrap={best_combined['bootstrap']}, "
-      f"max_depth={int(best_combined['max_depth'])}")
-print(f"   referral_length I_j: {best_combined['referral_importance']:.4f}")
-print(f"   TPR gap: {best_combined['tpr_gap']:.3f}")
+print_header("GRID SEARCH RESULTS")
+print(f"\nBest parameters (combined score):")
+print(f"  max_features: {best['max_features']}")
+print(f"  max_samples:  {best['max_samples']:.3f}")
+print(f"  bootstrap:    {best['bootstrap']}")
+print(f"  max_depth:    {int(best['max_depth'])}")
+print(f"\n{'Metric':<35} {'Baseline':>10} {'Tuned':>10}")
+print(f"{'─'*55}")
+print(f"  {primary_feature} I_j {'':10} "
+      f"{baseline_imp:>10.4f} {best['referral_importance']:>10.4f}")
+print(f"  TPR Group A {'':13} "
+      f"{baseline_tpr_A:>10.3f} {best['tpr_A']:>10.3f}")
+print(f"  TPR Group B {'':13} "
+      f"{baseline_tpr_B:>10.3f} {best['tpr_B']:>10.3f}")
+print(f"  TPR Gap {'':17} "
+      f"{baseline_gap:>10.3f} {best['tpr_gap']:>10.3f}")
 
 # ─────────────────────────────────────────
-# 6. TOP 10 COMBINATIONS
+# 6. SAVE RESULTS
 # ─────────────────────────────────────────
 
-print()
-print("=" * 65)
-print("TOP 10 COMBINATIONS (by combined score)")
-print("=" * 65)
-top10 = results_df.nsmallest(10, 'combined_score')
-print(f"\n{'max_feat':<10} {'max_samp':<10} {'bootstrap':<12} "
-      f"{'max_dep':<10} {'ref_imp':<12} {'tpr_gap':<10}")
-print("-" * 65)
-for _, row in top10.iterrows():
-    print(f"{str(row['max_features']):<10} "
-          f"{row['max_samples']:<10} "
-          f"{str(row['bootstrap']):<12} "
-          f"{int(row['max_depth']):<10} "
-          f"{row['referral_importance']:<12.4f} "
-          f"{row['tpr_gap']:<10.3f}")
-
-# ─────────────────────────────────────────
-# 7. RETRAIN WITH BEST PARAMETERS
-# ─────────────────────────────────────────
-
-print()
-print("=" * 65)
-print("RETRAINING WITH BEST COMBINED PARAMETERS")
-print("=" * 65)
-
-best_params = {
-    'max_features': best_combined['max_features'],
-    'max_samples': best_combined['max_samples'],
-    'bootstrap': bool(best_combined['bootstrap']),
-    'max_depth': int(best_combined['max_depth'])
-}
-
-rf_tuned = RandomForestClassifier(
-    n_estimators=100,
-    random_state=42,
-    class_weight='balanced',
-    **best_params
+results_path = os.path.join(
+    DATA_DIR, f'grid_search_results_{CURRENT_MODE}.csv'
 )
-rf_tuned.fit(X_train, y_train)
-
-# Full permutation importance on tuned model
-tuned_imp = permutation_importance_referral(
-    rf_tuned, X_test_arr, y_test.values, j_ref, n_trees=50
-)
-tuned_gap, tuned_tpr_A, tuned_tpr_B = compute_tpr_gap(
-    rf_tuned, X_test_A, y_test_A, X_test_B, y_test_B
-)
-
-print(f"\nBest parameters: {best_params}")
-print()
-print(f"{'Metric':<35} {'Baseline':>10} {'Tuned':>10} {'Change':>10}")
-print("-" * 65)
-print(f"{'referral_length I_j':<35} "
-      f"{baseline_imp:>10.4f} "
-      f"{tuned_imp:>10.4f} "
-      f"{tuned_imp-baseline_imp:>+10.4f}")
-print(f"{'TPR Group A':<35} "
-      f"{baseline_tpr_A:>10.3f} "
-      f"{tuned_tpr_A:>10.3f} "
-      f"{tuned_tpr_A-baseline_tpr_A:>+10.3f}")
-print(f"{'TPR Group B':<35} "
-      f"{baseline_tpr_B:>10.3f} "
-      f"{tuned_tpr_B:>10.3f} "
-      f"{tuned_tpr_B-baseline_tpr_B:>+10.3f}")
-print(f"{'TPR Gap':<35} "
-      f"{baseline_gap:>10.3f} "
-      f"{tuned_gap:>10.3f} "
-      f"{tuned_gap-baseline_gap:>+10.3f}")
-
-print(f"""
-Interpretation:
-  Hyperparameter tuning reduced referral_length dependence
-  from {baseline_imp:.4f} to {tuned_imp:.4f}
-  However: TPR gap remains substantial ({tuned_gap:.3f})
-""")
+results_df.to_csv(results_path, index=False)
+print(f"\nResults saved to {results_path}")
 
 # ─────────────────────────────────────────
-# 8. SAVE TUNED MODEL PARAMETERS
+# 7. VISUALISATIONS
 # ─────────────────────────────────────────
 
-results_df.to_csv('data/grid_search_results.csv', index=False)
-print(f"Grid search results saved to data/grid_search_results.csv")
-
-best_params_df = pd.DataFrame([best_params])
-best_params_df.to_csv('data/best_params.csv', index=False)
-print(f"Best parameters saved to data/best_params.csv")
-
-# ─────────────────────────────────────────
-# 9. VISUALISATIONS
-# ─────────────────────────────────────────
-
-os.makedirs('visualisations/outputs', exist_ok=True)
-
+ensure_output_dir()
 fig, axes = plt.subplots(2, 2, figsize=(14, 12))
 
-# Plot 1: Distribution of referral_length importance across all combos
+# Plot 1: Distribution of bias importance
 axes[0, 0].hist(results_df['referral_importance'],
-                bins=30, color='steelblue', alpha=0.8)
-axes[0, 0].axvline(x=baseline_imp, color='red', linestyle='--',
-                    linewidth=2, label=f'Baseline I_j={baseline_imp:.4f}')
-axes[0, 0].axvline(x=tuned_imp, color='green', linestyle='--',
-                    linewidth=2, label=f'Best I_j={tuned_imp:.4f}')
-axes[0, 0].set_xlabel('referral_length Permutation Importance I_j')
+                bins=20, color='steelblue', alpha=0.8)
+axes[0, 0].axvline(x=baseline_imp, color='red',
+                    linestyle='--',
+                    label=f'Baseline={baseline_imp:.4f}')
+axes[0, 0].axvline(x=best['referral_importance'],
+                    color='green', linestyle='--',
+                    label=f"Best={best['referral_importance']:.4f}")
+axes[0, 0].set_xlabel(f'{primary_feature} Importance I_j')
 axes[0, 0].set_ylabel('Count')
-axes[0, 0].set_title('Distribution of referral_length Importance\nAcross All Parameter Combinations')
+axes[0, 0].set_title(f'{primary_feature} Importance Distribution')
 axes[0, 0].legend()
 axes[0, 0].grid(True, alpha=0.3)
 
 # Plot 2: Distribution of TPR gap
 axes[0, 1].hist(results_df['tpr_gap'],
-                bins=30, color='coral', alpha=0.8)
-axes[0, 1].axvline(x=baseline_gap, color='red', linestyle='--',
-                    linewidth=2, label=f'Baseline gap={baseline_gap:.3f}')
-axes[0, 1].axvline(x=tuned_gap, color='green', linestyle='--',
-                    linewidth=2, label=f'Best gap={tuned_gap:.3f}')
+                bins=20, color='coral', alpha=0.8)
+axes[0, 1].axvline(x=baseline_gap, color='red',
+                    linestyle='--',
+                    label=f'Baseline={baseline_gap:.3f}')
+axes[0, 1].axvline(x=best['tpr_gap'], color='green',
+                    linestyle='--',
+                    label=f"Best={best['tpr_gap']:.3f}")
 axes[0, 1].set_xlabel('TPR Gap')
 axes[0, 1].set_ylabel('Count')
-axes[0, 1].set_title('Distribution of TPR Gap\nAcross All Parameter Combinations')
+axes[0, 1].set_title('TPR Gap Distribution')
 axes[0, 1].legend()
 axes[0, 1].grid(True, alpha=0.3)
 
-# Plot 3: Scatter - importance vs TPR gap
+# Plot 3: Trade-off scatter
 scatter = axes[1, 0].scatter(
     results_df['referral_importance'],
     results_df['tpr_gap'],
@@ -369,90 +201,69 @@ scatter = axes[1, 0].scatter(
 )
 plt.colorbar(scatter, ax=axes[1, 0], label='max_depth')
 axes[1, 0].scatter([baseline_imp], [baseline_gap],
-                    color='red', s=200, zorder=5,
-                    marker='*', label='Baseline')
-axes[1, 0].scatter([tuned_imp], [tuned_gap],
-                    color='green', s=200, zorder=5,
-                    marker='*', label='Best combined')
-axes[1, 0].set_xlabel('referral_length Importance I_j')
+                    color='red', s=200, marker='*',
+                    zorder=5, label='Baseline')
+axes[1, 0].scatter([best['referral_importance']],
+                    [best['tpr_gap']],
+                    color='green', s=200, marker='*',
+                    zorder=5, label='Best')
+axes[1, 0].set_xlabel(f'{primary_feature} I_j')
 axes[1, 0].set_ylabel('TPR Gap')
-axes[1, 0].set_title('Trade-off: Proxy Reliance vs Fairness Gap\n'
-                      '(coloured by max_depth)')
+axes[1, 0].set_title('Trade-off: Proxy Reliance vs Fairness Gap')
 axes[1, 0].legend()
 axes[1, 0].grid(True, alpha=0.3)
 
-# Plot 4: Before vs after comparison
-metrics = ['referral_length\nImportance I_j',
+# Plot 4: Before vs after
+metrics = [f'{primary_feature[:12]}\nI_j',
            'TPR\nGroup A', 'TPR\nGroup B', 'TPR\nGap']
 baseline_vals = [baseline_imp, baseline_tpr_A,
                  baseline_tpr_B, baseline_gap]
-tuned_vals = [tuned_imp, tuned_tpr_A, tuned_tpr_B, tuned_gap]
+tuned_vals = [best['referral_importance'], best['tpr_A'],
+              best['tpr_B'], best['tpr_gap']]
 
 x = np.arange(len(metrics))
-width = 0.35
-axes[1, 1].bar(x - width/2, baseline_vals, width,
-               label='Baseline (default params)',
-               color='coral', alpha=0.8)
-axes[1, 1].bar(x + width/2, tuned_vals, width,
-               label=f'Tuned ({best_params})',
+w = 0.35
+axes[1, 1].bar(x - w/2, baseline_vals, w,
+               label='Baseline', color='coral', alpha=0.8)
+axes[1, 1].bar(x + w/2, tuned_vals, w,
+               label='Grid Search Tuned',
                color='steelblue', alpha=0.8)
 axes[1, 1].set_xticks(x)
 axes[1, 1].set_xticklabels(metrics, fontsize=9)
 axes[1, 1].set_ylabel('Value')
-axes[1, 1].set_title('Before vs After Hyperparameter Tuning\n'
-                      'Stage 1: Internal Bias Reduction')
-axes[1, 1].legend(fontsize=8)
+axes[1, 1].set_title('Before vs After Tuning')
+axes[1, 1].legend()
 axes[1, 1].grid(True, alpha=0.3)
-
 for i, (b, t) in enumerate(zip(baseline_vals, tuned_vals)):
-    axes[1, 1].text(i - width/2, b + 0.005,
-                     f'{b:.3f}', ha='center', fontsize=8)
-    axes[1, 1].text(i + width/2, t + 0.005,
-                     f'{t:.3f}', ha='center', fontsize=8)
+    axes[1, 1].text(i-w/2, b+0.005, f'{b:.3f}',
+                     ha='center', fontsize=8)
+    axes[1, 1].text(i+w/2, t+0.005, f'{t:.3f}',
+                     ha='center', fontsize=8)
 
-plt.suptitle('Hyperparameter Tuning: Grid Search Results\n'
-             'From Probabilities to Decisions',
+plt.suptitle(f'Hyperparameter Tuning: Grid Search\n'
+             f'{FIGURE_TITLE_SUFFIX}',
              fontsize=12, fontweight='bold')
-
 plt.tight_layout()
-plt.savefig('visualisations/outputs/hyperparameter_tuning.png',
-            dpi=150, bbox_inches='tight')
+
+filepath = get_output_path('hyperparameter_tuning.png')
+plt.savefig(filepath, dpi=150, bbox_inches='tight')
 plt.show()
-print("Plot saved to visualisations/outputs/hyperparameter_tuning.png")
+print(f"Plot saved to {filepath}")
 
-# ─────────────────────────────────────────
-# 10. FINAL SUMMARY
-# ─────────────────────────────────────────
-
-print()
-print("=" * 65)
-print("TWO-STAGE BIAS REDUCTION FRAMEWORK - STAGE 1 COMPLETE")
-print("=" * 65)
+print_header("SUMMARY")
 print(f"""
-Stage 1 - Hyperparameter Tuning (this file):
-  Initial referral_length I_j:  {baseline_imp:.4f}
-  Tuned referral_length I_j:    {tuned_imp:.4f}
-  Reduction:                    {baseline_imp-tuned_imp:.4f}
-  
-  Best parameters found:
-    max_features = {best_params['max_features']}
-    max_samples  = {best_params['max_samples']}
-    bootstrap    = {best_params['bootstrap']}
-    max_depth    = {best_params['max_depth']}
+Mode: {CURRENT_MODE}
+Primary bias feature: {primary_feature}
 
-Stage 2 - Threshold Correction (roc_analysis.py):
-  TPR gap after tuning:  {tuned_gap:.3f}
-  TPR gap after threshold correction: 0.000
-  
-  Systematic bias from P_A ≠ P_B cannot be removed
-  by hyperparameter tuning alone. Chouldechova's result
-  applies regardless of model quality.
-  
-  Group-specific ROC thresholds are therefore necessary
-  and mathematically justified as Stage 2.
+Grid Search found best params:
+  max_features={best['max_features']},
+  max_samples={best['max_samples']:.3f},
+  max_depth={int(best['max_depth'])}
 
-This validates the two-stage framework:
-  Tuning → reduces internal bias
-  Thresholds → corrects systematic bias
-  Together → equitable triage outcomes
+Stage 1 results:
+  {primary_feature} I_j: {baseline_imp:.4f} -> {best['referral_importance']:.4f}
+  TPR gap: {baseline_gap:.3f} -> {best['tpr_gap']:.3f}
+
+Stage 2 (threshold correction) still required.
+Results saved to {results_path}
 """)
