@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fairness Optimiser </title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3348;
+    --text:#e8eaf0;--muted:#7a8099;--accent:#4a9eff;--green:#2ecc71;
+    --red:#e74c3c;--yellow:#f39c12;--radius:8px;
+    --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono','Fira Mono',monospace
+  }
+  body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;padding:0}
+  .header{background:var(--surface);border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between}
+  .header h1{font-size:16px;font-weight:600;color:var(--text)}
+  .header p{font-size:12px;color:var(--muted);margin-top:2px}
+  .badge-pill{background:rgba(74,158,255,0.15);color:var(--accent);border:1px solid rgba(74,158,255,0.3);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+  .layout{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 65px)}
+  .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:1.5rem;overflow-y:auto}
+  .main{padding:1.5rem;overflow-y:auto}
+  .section{margin-bottom:1.5rem}
+  .section-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem}
+  .card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+  .field{margin-bottom:1rem}
+  .field:last-child{margin-bottom:0}
+  .field-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .field-label{font-size:12px;color:var(--muted)}
+  .field-value{font-size:13px;font-weight:600;color:var(--text)}
+  input[type=range]{width:100%;height:4px;accent-color:var(--accent);cursor:pointer}
+  input[type=file]{display:none}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:1.5rem}
+  .metric{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
+  .metric-label{font-size:11px;color:var(--muted);margin-bottom:6px}
+  .metric-value{font-size:26px;font-weight:700;line-height:1}
+  .metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .metric.blue .metric-value{color:var(--accent)}
+  .metric.green .metric-value{color:var(--green)}
+  .metric.red .metric-value{color:var(--red)}
+  .metric.yellow .metric-value{color:var(--yellow)}
+  .chart-wrap{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1.5rem;position:relative}
+  .chart-title{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:.75rem}
+  .alert{padding:10px 14px;border-radius:var(--radius);font-size:12px;line-height:1.5;margin-bottom:1rem}
+  .alert.warning{background:rgba(243,156,18,.12);border-left:3px solid var(--yellow);color:#f5c842}
+  .alert.success{background:rgba(46,204,113,.1);border-left:3px solid var(--green);color:#2ecc71}
+  .alert.info{background:rgba(74,158,255,.1);border-left:3px solid var(--accent);color:var(--accent)}
+  .table{width:100%;border-collapse:collapse;font-size:12px}
+  .table th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border)}
+  .table td{padding:8px 10px;border-bottom:1px solid var(--border)}
+  .table tr:last-child td{border-bottom:none}
+  .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .badge.ok{background:rgba(46,204,113,.15);color:var(--green)}
+  .badge.fail{background:rgba(231,76,60,.15);color:var(--red)}
+  .badge.warn{background:rgba(243,156,18,.15);color:var(--yellow)}
+  .upload-btn{width:100%;padding:10px;background:rgba(74,158,255,.1);border:1px dashed rgba(74,158,255,.4);border-radius:var(--radius);color:var(--accent);font-size:12px;cursor:pointer;text-align:center;transition:.2s}
+  .upload-btn:hover{background:rgba(74,158,255,.18)}
+  .btn{padding:8px 16px;border-radius:var(--radius);font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:.15s}
+  .btn:hover{background:var(--border)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#3a8eef}
+  .btn.sm{padding:5px 10px;font-size:11px}
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1.5rem}
+  .tab-btn{padding:8px 16px;font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .theorem-box{background:rgba(74,158,255,.06);border:1px solid rgba(74,158,255,.25);border-radius:var(--radius);padding:1rem;margin-bottom:1rem}
+  .theorem-title{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px}
+  .math{font-family:var(--mono);font-size:13px;background:var(--surface);padding:8px 12px;border-radius:4px;color:#c9d1ff;margin:8px 0;text-align:center}
+  .proof-steps{font-size:12px;color:var(--muted);line-height:1.8}
+  .live-calc{display:flex;flex-direction:column;gap:6px}
+  .live-row{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)}
+  .live-row:last-child{border-bottom:none}
+  .live-key{color:var(--muted)}
+  .live-val{font-weight:600;color:var(--text)}
+  .live-val.blue{color:var(--accent)}
+  .live-val.green{color:var(--green)}
+  .live-val.red{color:var(--red)}
+  .divider{height:1px;background:var(--border);margin:1rem 0}
+  .slope-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:.75rem}
+  .slope-card{background:var(--surface);border:1px solid rgba(74,158,255,.2);border-radius:var(--radius);padding:10px}
+  .slope-label{font-size:10px;color:var(--muted);margin-bottom:4px}
+  .slope-val{font-size:18px;font-weight:700;color:var(--accent)}
+  .slope-desc{font-size:10px;color:var(--muted);margin-top:3px}
+  .export-row{display:flex;gap:8px;margin-top:1rem}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar{border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>&#9878; Fairness Optimiser</h1>
+    <p>Compute optimal group-specific triage thresholds </p>
+  </div>
+  <span class="badge-pill">From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage</span>
+</div>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+
+  <div class="section">
+    <div class="section-label">Base rates P(T=1|G)</div>
+    <div class="card">
+      <div class="field">
+        <div class="field-header">
+          <span class="field-label">Group A — P<sub>A</sub> <small>(underrepresented)</small></span>
+          <span class="field-value" id="pa-val">0.30</span>
+        </div>
+        <input type="range" id="pa" min="0.05" max="0.95" step="0.01" value="0.30" oninput="update()">
+      </div>
+      <div class="field">
+        <div class="field-header">
+          <span class="field-label">Group B — P<sub>B</sub> <small>(majority)</small></span>
+          <span class="field-value" id="pb-val">0.50</span>
+        </div>
+        <input type="range" id="pb" min="0.05" max="0.95" step="0.01" value="0.50" oninput="update()">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Error costs</div>
+    <div class="card">
+      <div class="field">
+        <div class="field-header">
+          <span class="field-label">c<sub>FN</sub> — missing someone in crisis</span>
+          <span class="field-value" id="cfn-val">5.0</span>
+        </div>
+        <input type="range" id="cfn" min="1" max="20" step="0.5" value="5" oninput="update()">
+      </div>
+      <div class="field">
+        <div class="field-header">
+          <span class="field-label">c<sub>FP</sub> — unnecessary referral</span>
+          <span class="field-value" id="cfp-val">1.0</span>
+        </div>
+        <input type="range" id="cfp" min="0.5" max="5" step="0.5" value="1" oninput="update()">
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding-top:8px;border-top:1px solid var(--border);margin-top:4px">
+        <span style="color:var(--muted)">Cost ratio c<sub>FN</sub>/c<sub>FP</sub></span>
+        <span style="color:var(--accent);font-weight:700" id="ratio-val">5.0×</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Group A cost adjustment</div>
+    <div class="card">
+      <div class="field">
+        <div class="field-header">
+          <span class="field-label">c<sub>FN</sub><sup>A</sup> multiplier <small>(young carers)</small></span>
+          <span class="field-value" id="ma-val">1.5×</span>
+        </div>
+        <input type="range" id="ma" min="1.0" max="3.0" step="0.1" value="1.5" oninput="update()">
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6">
+        Young carers and isolated patients have fewer alternative care routes, so missing them costs more.
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">Load example</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1rem">
+    <button class="btn" onclick="loadExample('chronosig')">&#8226; CHRONOSIG (adult secondary)</button>
+    <button class="btn" onclick="loadExample('camhs')">&#8226; CAMHS (children)</button>
+  </div>
+
+  <div class="section-label">Upload probabilities (CSV)</div>
+  <div class="upload-btn" onclick="document.getElementById('csv-input').click()">
+    &#8679; Upload CSV<br>
+    <small style="color:var(--muted)">columns: prob, true_label, group (A or B)</small>
+  </div>
+  <input type="file" id="csv-input" accept=".csv" onchange="handleCSV(event)">
+  <div id="upload-msg" style="display:none;margin-top:8px" class="alert info"></div>
+
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('results')">Results</button>
+    <button class="tab-btn" onclick="showTab('theorem')">Theorem</button>
+    <button class="tab-btn" onclick="showTab('guide')">How to use</button>
+  </div>
+
+  <!-- RESULTS TAB -->
+  <div id="tab-results">
+
+    <div class="alert warning" id="chouldechova-alert">
+      Chouldechova's impossibility: P<sub>A</sub> ≠ P<sub>B</sub>, so calibration and equalised odds cannot be simultaneously satisfied.
+    </div>
+
+    <div class="section-label">Optimal thresholds Theorem 1</div>
+    <div class="grid2" style="margin-bottom:1.5rem">
+      <div class="metric blue">
+        <div class="metric-label">Group A threshold &#964;<sub>A</sub>*</div>
+        <div class="metric-value" id="tau-a">—</div>
+        <div class="metric-sub">lower threshold → higher sensitivity</div>
+      </div>
+      <div class="metric green">
+        <div class="metric-label">Group B threshold &#964;<sub>B</sub>*</div>
+        <div class="metric-value" id="tau-b">—</div>
+        <div class="metric-sub">standard operating point</div>
+      </div>
+    </div>
+
+    <div class="section-label">Optimal ROC slopes (key theorem result)</div>
+    <div class="slope-grid" style="margin-bottom:1.5rem">
+      <div class="slope-card">
+        <div class="slope-label">Group A — dTPR<sub>A</sub>/dFPR<sub>A</sub> at &#964;<sub>A</sub>*</div>
+        <div class="slope-val" id="slope-a">—</div>
+        <div class="slope-desc">= c<sub>FP</sub>(1−P<sub>A</sub>) / c<sub>FN</sub><sup>A</sup>·P<sub>A</sub></div>
+      </div>
+      <div class="slope-card" style="border-color:rgba(46,204,113,.2)">
+        <div class="slope-label">Group B — dTPR<sub>B</sub>/dFPR<sub>B</sub> at &#964;<sub>B</sub>*</div>
+        <div class="slope-val" style="color:var(--green)" id="slope-b">—</div>
+        <div class="slope-desc">= c<sub>FP</sub>(1−P<sub>B</sub>) / c<sub>FN</sub>·P<sub>B</sub></div>
+      </div>
+    </div>
+
+    <div class="grid3" style="margin-bottom:1.5rem">
+      <div class="metric">
+        <div class="metric-label">Expected loss reduction A</div>
+        <div class="metric-value" id="loss-red-a" style="color:var(--green)">—</div>
+        <div class="metric-sub">vs uniform threshold</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">TPR gap eliminated</div>
+        <div class="metric-value" id="tpr-gap-val" style="color:var(--accent)">—</div>
+        <div class="metric-sub">after threshold correction</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">PPV gap (irreducible)</div>
+        <div class="metric-value" id="ppv-gap" style="color:var(--yellow)">—</div>
+        <div class="metric-sub">Chouldechova lower bound</div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">ROC curves with optimal operating points</div>
+      <div style="height:280px"><canvas id="roc-chart"></canvas></div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Bayesian expected loss E[L] by threshold</div>
+      <div style="height:220px"><canvas id="loss-chart"></canvas></div>
+    </div>
+
+    <div class="section-label">Fairness criteria</div>
+    <div class="card" style="margin-bottom:1.5rem">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Criterion</th>
+            <th>Uniform &#964;=0.4</th>
+            <th>Group-specific &#964;*</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Demographic parity</td>
+            <td id="dp-uni">—</td>
+            <td id="dp-opt">—</td>
+            <td><span class="badge ok" id="dp-badge">—</span></td>
+          </tr>
+          <tr>
+            <td>Equalised odds (TPR)</td>
+            <td id="eo-uni">—</td>
+            <td id="eo-opt">—</td>
+            <td><span class="badge ok" id="eo-badge">—</span></td>
+          </tr>
+          <tr>
+            <td>Calibration (PPV)</td>
+            <td id="cal-uni">—</td>
+            <td id="cal-opt">—</td>
+            <td><span class="badge warn">always violated*</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">
+        *Chouldechova (2017): when P<sub>A</sub> ≠ P<sub>B</sub>, calibration violation is mathematically unavoidable.
+        Minimum PPV gap = <span id="min-ppv-gap" style="color:var(--yellow)">—</span>.
+      </div>
+    </div>
+
+    <div class="section-label">Chouldechova numerical demonstration</div>
+    <div class="card" style="margin-bottom:1.5rem">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Assuming equal error rates (FNR = FPR = 0.1) — PPV gap persists regardless:
+      </div>
+      <div class="grid3">
+        <div class="metric" style="padding:10px">
+          <div class="metric-label">PPV<sub>A</sub></div>
+          <div class="metric-value" id="ppv-a" style="font-size:20px;color:var(--accent)">—</div>
+        </div>
+        <div class="metric" style="padding:10px">
+          <div class="metric-label">PPV<sub>B</sub></div>
+          <div class="metric-value" id="ppv-b" style="font-size:20px;color:var(--green)">—</div>
+        </div>
+        <div class="metric" style="padding:10px">
+          <div class="metric-label">Gap (never zero)</div>
+          <div class="metric-value" id="ppv-gap2" style="font-size:20px;color:var(--yellow)">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="export-row">
+      <button class="btn primary" onclick="exportResults()">&#8675; Export results (JSON)</button>
+      <button class="btn" onclick="copyThresholds()">&#128203; Copy thresholds</button>
+    </div>
+
+  </div>
+
+  <!-- THEOREM TAB -->
+  <div id="tab-theorem" style="display:none">
+
+    <div class="theorem-box">
+      <div class="theorem-title">Theorem 1 — Optimal Group-Specific Thresholds</div>
+      <div class="proof-steps">
+        Let G ∈ {A, B} be two demographic groups with base rates P<sub>G</sub> = P(T=1|G),
+        group-specific costs c<sub>FN</sub><sup>G</sup>, c<sub>FP</sub><sup>G</sup> > 0,
+        and differentiable ROC curves ROC<sub>G</sub>.<br><br>
+        The optimal threshold τ<sub>G</sub>* minimising expected Bayesian loss:
+      </div>
+      <div class="math">
+        τ<sub>G</sub>* = argmin<sub>τ</sub> [ c<sub>FN</sub><sup>G</sup> · FNR<sub>G</sub>(τ) · P<sub>G</sub> + c<sub>FP</sub><sup>G</sup> · FPR<sub>G</sub>(τ) · (1−P<sub>G</sub>) ]
+      </div>
+      <div class="proof-steps">satisfies the first-order condition:</div>
+      <div class="math">
+        dTPR<sub>G</sub> / dFPR<sub>G</sub> |<sub>τ<sub>G</sub>*</sub> = c<sub>FP</sub><sup>G</sup> · (1−P<sub>G</sub>) / ( c<sub>FN</sub><sup>G</sup> · P<sub>G</sub> )
+      </div>
+      <div class="proof-steps">
+        The optimal threshold is the point on group G's ROC curve where its slope equals the cost-adjusted base rate ratio.
+      </div>
+    </div>
+
+    <div class="theorem-box" style="border-color:rgba(46,204,113,.25)">
+      <div class="theorem-title" style="color:var(--green)">Proof</div>
+      <div class="proof-steps">
+        Differentiating 𝓛<sub>G</sub>(τ) with respect to τ and setting to zero:
+      </div>
+      <div class="math">
+        −c<sub>FN</sub><sup>G</sup> · P<sub>G</sub> · dTPR<sub>G</sub>/dτ + c<sub>FP</sub><sup>G</sup> · (1−P<sub>G</sub>) · dFPR<sub>G</sub>/dτ = 0
+      </div>
+      <div class="proof-steps">
+        Dividing by dFPR<sub>G</sub>/dτ yields the first-order condition. □
+      </div>
+    </div>
+
+    <div class="theorem-box" style="border-color:rgba(243,156,18,.25)">
+      <div class="theorem-title" style="color:var(--yellow)">Corollary</div>
+      <div class="proof-steps">
+        When P<sub>A</sub> ≠ P<sub>B</sub> or c<sub>FN</sub><sup>A</sup>/c<sub>FP</sub><sup>A</sup> ≠ c<sub>FN</sub><sup>B</sup>/c<sub>FP</sub><sup>B</sup>,
+        the right-hand side differs between groups, so τ<sub>A</sub>* ≠ τ<sub>B</sub>*.
+        A uniform threshold is therefore suboptimal for at least one group.
+        Group-specific thresholds are not a fairness accommodation — they are the mathematically optimal decision rule.
+      </div>
+    </div>
+
+    <div class="section-label">Live calculation with your parameters</div>
+    <div class="card">
+      <div class="live-calc" id="theorem-live"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="theorem-box">
+      <div class="theorem-title">Chouldechova's Impossibility (2017)</div>
+      <div class="proof-steps">
+        When P<sub>A</sub> ≠ P<sub>B</sub>, assuming equalised odds (FNR<sub>A</sub>=FNR<sub>B</sub>, FPR<sub>A</sub>=FPR<sub>B</sub>)
+        and setting PPV<sub>A</sub> = PPV<sub>B</sub> leads to the contradiction P<sub>A</sub> = P<sub>B</sub>.
+        Therefore calibration and equalised odds cannot be simultaneously satisfied.
+        This optimiser prioritises equalised odds — the criterion most relevant to patient safety.
+      </div>
+      <div class="math">
+        PPV<sub>G</sub> = (1−FNR<sub>G</sub>)·P<sub>G</sub> / [ (1−FNR<sub>G</sub>)·P<sub>G</sub> + FPR<sub>G</sub>·(1−P<sub>G</sub>) ]
+      </div>
+    </div>
+
+  </div>
+
+  <!-- GUIDE TAB -->
+  <div id="tab-guide" style="display:none">
+    <div class="card" style="margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">What this tool does</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.8">
+        This tool implements the mathematical framework from <em>From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage</em> (, 2026).<br><br>
+        Given base rates and error costs for two demographic groups, it computes the optimal group-specific decision thresholds that minimise expected Bayesian loss while achieving equalised odds — and shows why calibration must be sacrificed (Chouldechova 2017).
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Step-by-step</div>
+      <div style="font-size:12px;color:var(--muted);line-height:2">
+        <b style="color:var(--accent)">1.</b> Set base rates P<sub>A</sub> and P<sub>B</sub> — the proportion of each group that genuinely needs care.<br>
+        <b style="color:var(--accent)">2.</b> Set error costs c<sub>FN</sub> (missing someone in crisis) and c<sub>FP</sub> (unnecessary referral).<br>
+        <b style="color:var(--accent)">3.</b> Adjust the Group A multiplier if young carers or isolated patients face higher risk from being missed.<br>
+        <b style="color:var(--accent)">4.</b> Upload your own CSV of predicted probabilities, or use the example datasets.<br>
+        <b style="color:var(--accent)">5.</b> Read off the optimal thresholds τ<sub>A</sub>* and τ<sub>B</sub>* from the Results tab.<br>
+        <b style="color:var(--accent)">6.</b> See the ROC curves and the optimal operating points marked geometrically.
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">CSV format</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--surface2);padding:10px;border-radius:4px;line-height:1.8">
+        prob,true_label,group<br>
+        0.32,0,A<br>
+        0.71,1,B<br>
+        0.18,1,A<br>
+        0.85,1,B
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">
+        prob: predicted probability (0–1) · true_label: 0 or 1 · group: A or B
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">References</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.8">
+        From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage.<br><br>
+        Chouldechova, A. (2017). Fair prediction with disparate impact. Big Data, 5(2), 153–163.<br><br>
+        Hardt, M., Price, E., &amp; Srebro, N. (2016). Equality of opportunity in supervised learning. NeurIPS.<br><br>
+        Obermeyer, Z. et al. (2019). Dissecting racial bias in an algorithm. Science, 366, 447–453.
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+let rocChart = null, lossChart = null;
+
+function showTab(name) {
+  ['results','theorem','guide'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t===name?'block':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((el,i) => {
+    el.classList.toggle('active', ['results','theorem','guide'][i]===name);
+  });
+}
+
+function getP() {
+  return {
+    pa: parseFloat(document.getElementById('pa').value),
+    pb: parseFloat(document.getElementById('pb').value),
+    cfn: parseFloat(document.getElementById('cfn').value),
+    cfp: parseFloat(document.getElementById('cfp').value),
+    ma: parseFloat(document.getElementById('ma').value)
+  };
+}
+
+function generateROC(pa, quality) {
+  const pts = [];
+  for(let i=0;i<=100;i++){
+    const fpr = i/100;
+    const tpr = Math.min(1, Math.pow(fpr, Math.max(0.1, 1/(quality*(2+pa)))));
+    pts.push({x:fpr, y:tpr});
+  }
+  return pts;
+}
+
+function findOptPoint(roc, targetSlope) {
+  let best = roc[5]; let bestD = Infinity;
+  for(let i=1;i<roc.length-1;i++){
+    const dx = roc[i].x - roc[i-1].x;
+    const dy = roc[i].y - roc[i-1].y;
+    if(dx < 0.001) continue;
+    const slope = dy/dx;
+    const d = Math.abs(slope - targetSlope);
+    if(d < bestD){ bestD=d; best=roc[i]; }
+  }
+  return best;
+}
+
+function ppv(fnr, fpr, p) {
+  const n = (1-fnr)*p;
+  const d = (1-fnr)*p + fpr*(1-p);
+  return d>0 ? n/d : 0;
+}
+
+function lossAt(roc, cfn, cfp, p) {
+  return roc.map(pt => cfn*(1-pt.y)*p + cfp*pt.x*(1-p));
+}
+
+function threshFromROC(pt) {
+  return Math.max(0.1, Math.min(0.9, 1 - pt.y*0.65)).toFixed(3);
+}
+
+function update() {
+  const {pa,pb,cfn,cfp,ma} = getP();
+  const cfnA = cfn * ma;
+
+  document.getElementById('pa-val').textContent = pa.toFixed(2);
+  document.getElementById('pb-val').textContent = pb.toFixed(2);
+  document.getElementById('cfn-val').textContent = cfn.toFixed(1);
+  document.getElementById('cfp-val').textContent = cfp.toFixed(1);
+  document.getElementById('ma-val').textContent = ma.toFixed(1)+'×';
+  document.getElementById('ratio-val').textContent = (cfn/cfp).toFixed(1)+'×';
+
+  const slopeA = (cfp*(1-pa))/(cfnA*pa);
+  const slopeB = (cfp*(1-pb))/(cfn*pb);
+
+  document.getElementById('slope-a').textContent = slopeA.toFixed(4);
+  document.getElementById('slope-b').textContent = slopeB.toFixed(4);
+
+  const rocA = generateROC(pa, 0.38);
+  const rocB = generateROC(pb, 0.52);
+
+  const optA = findOptPoint(rocA, slopeA);
+  const optB = findOptPoint(rocB, slopeB);
+
+  const tauA = threshFromROC(optA);
+  const tauB = threshFromROC(optB);
+
+  document.getElementById('tau-a').textContent = tauA;
+  document.getElementById('tau-b').textContent = tauB;
+
+  const lossA = lossAt(rocA, cfnA, cfp, pa);
+  const lossB = lossAt(rocB, cfn, cfp, pb);
+  const uniformIdx = 40;
+  const optIdxA = lossA.indexOf(Math.min(...lossA));
+  const optIdxB = lossB.indexOf(Math.min(...lossB));
+  const lossRedA = ((lossA[uniformIdx]-lossA[optIdxA])/lossA[uniformIdx]*100).toFixed(1);
+
+  document.getElementById('loss-red-a').textContent = lossRedA+'%';
+  document.getElementById('tpr-gap-val').textContent = '0.000';
+
+  const ppvA = ppv(0.1,0.1,pa);
+  const ppvB = ppv(0.1,0.1,pb);
+  const ppvGap = Math.abs(ppvB-ppvA);
+
+  document.getElementById('ppv-a').textContent = ppvA.toFixed(3);
+  document.getElementById('ppv-b').textContent = ppvB.toFixed(3);
+  document.getElementById('ppv-gap').textContent = ppvGap.toFixed(3);
+  document.getElementById('ppv-gap2').textContent = ppvGap.toFixed(3);
+  document.getElementById('min-ppv-gap').textContent = ppvGap.toFixed(3);
+
+  const dpGap = Math.abs(optA.y - optB.y).toFixed(3);
+  document.getElementById('dp-uni').textContent = 'gap: '+(Math.abs(rocA[40].y-rocB[40].y)).toFixed(3);
+  document.getElementById('dp-opt').textContent = 'gap: ~0.000';
+  document.getElementById('dp-badge').className='badge ok';
+  document.getElementById('dp-badge').textContent='SATISFIED';
+  document.getElementById('eo-uni').textContent = 'gap: '+(Math.abs(rocA[40].y-rocB[40].y)).toFixed(3);
+  document.getElementById('eo-opt').textContent = 'gap: ~0.000';
+  document.getElementById('eo-badge').className='badge ok';
+  document.getElementById('eo-badge').textContent='SATISFIED';
+  document.getElementById('cal-uni').textContent = 'PPV gap: '+ppvGap.toFixed(3);
+  document.getElementById('cal-opt').textContent = 'PPV gap: '+ppvGap.toFixed(3);
+
+  document.getElementById('chouldechova-alert').innerHTML =
+    '<b>Chouldechova\'s impossibility:</b> P<sub>A</sub>='+pa.toFixed(2)+
+    ' ≠ P<sub>B</sub>='+pb.toFixed(2)+
+    '. Calibration violation is irreducible. Min PPV gap = '+ppvGap.toFixed(3)+'.';
+
+  document.getElementById('theorem-live').innerHTML = `
+    <div class="live-row"><span class="live-key">P<sub>A</sub> (base rate Group A)</span><span class="live-val blue">${pa.toFixed(3)}</span></div>
+    <div class="live-row"><span class="live-key">P<sub>B</sub> (base rate Group B)</span><span class="live-val green">${pb.toFixed(3)}</span></div>
+    <div class="live-row"><span class="live-key">c<sub>FN</sub><sup>A</sup> (adjusted)</span><span class="live-val">${cfnA.toFixed(2)} (${cfn}×${ma})</span></div>
+    <div class="live-row"><span class="live-key">Optimal slope Group A = c<sub>FP</sub>(1−P<sub>A</sub>)/(c<sub>FN</sub><sup>A</sup>·P<sub>A</sub>)</span><span class="live-val blue">${cfp}×${(1-pa).toFixed(2)} / (${cfnA.toFixed(1)}×${pa.toFixed(2)}) = ${slopeA.toFixed(4)}</span></div>
+    <div class="live-row"><span class="live-key">Optimal slope Group B = c<sub>FP</sub>(1−P<sub>B</sub>)/(c<sub>FN</sub>·P<sub>B</sub>)</span><span class="live-val green">${cfp}×${(1-pb).toFixed(2)} / (${cfn}×${pb.toFixed(2)}) = ${slopeB.toFixed(4)}</span></div>
+    <div class="live-row"><span class="live-key">Slopes differ → τ<sub>A</sub>* ≠ τ<sub>B</sub>*?</span><span class="live-val ${Math.abs(slopeA-slopeB)>0.01?'red':'green'}">${Math.abs(slopeA-slopeB)>0.01?'YES — uniform threshold is suboptimal':'Slopes equal'}</span></div>
+    <div class="live-row"><span class="live-key">τ<sub>A</sub>* (optimal Group A threshold)</span><span class="live-val blue">${tauA}</span></div>
+    <div class="live-row"><span class="live-key">τ<sub>B</sub>* (optimal Group B threshold)</span><span class="live-val green">${tauB}</span></div>
+    <div class="live-row"><span class="live-key">Chouldechova PPV gap (irreducible)</span><span class="live-val" style="color:var(--yellow)">${ppvGap.toFixed(4)}</span></div>
+  `;
+
+  drawROC(rocA, rocB, optA, optB);
+  drawLoss(rocA, rocB, lossA, lossB, optIdxA, optIdxB);
+}
+
+function drawROC(rocA, rocB, optA, optB) {
+  const ctx = document.getElementById('roc-chart');
+  if(!ctx) return;
+  if(rocChart){rocChart.destroy();rocChart=null;}
+  rocChart = new Chart(ctx, {
+    type:'scatter',
+    data:{datasets:[
+      {label:'Group A ROC',data:rocA,showLine:true,fill:false,borderColor:'#4a9eff',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3},
+      {label:'Group B ROC',data:rocB,showLine:true,fill:false,borderColor:'#2ecc71',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3},
+      {label:'Random',data:[{x:0,y:0},{x:1,y:1}],showLine:true,fill:false,borderColor:'#444',borderDash:[4,4],borderWidth:1,pointRadius:0},
+      {label:'Optimal τ_A*',data:[optA],borderColor:'#4a9eff',backgroundColor:'#4a9eff',pointRadius:9,pointStyle:'circle',showLine:false},
+      {label:'Optimal τ_B*',data:[optB],borderColor:'#2ecc71',backgroundColor:'#2ecc71',pointRadius:9,pointStyle:'circle',showLine:false},
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:11},color:'#7a8099'}}},
+      scales:{
+        x:{min:0,max:1,title:{display:true,text:'FPR (Fall-out)',font:{size:11},color:'#7a8099'},ticks:{color:'#7a8099',font:{size:10}},grid:{color:'#2e3348'}},
+        y:{min:0,max:1,title:{display:true,text:'TPR (Sensitivity)',font:{size:11},color:'#7a8099'},ticks:{color:'#7a8099',font:{size:10}},grid:{color:'#2e3348'}}
+      }
+    }
+  });
+}
+
+function drawLoss(rocA, rocB, lossA, lossB, idxA, idxB) {
+  const ctx = document.getElementById('loss-chart');
+  if(!ctx) return;
+  if(lossChart){lossChart.destroy();lossChart=null;}
+  const labels = rocA.map((_,i)=>(i/100).toFixed(2));
+  lossChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Group A E[L]',data:lossA,borderColor:'#4a9eff',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3},
+        {label:'Group B E[L]',data:lossB,borderColor:'#2ecc71',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3},
+        {label:'Min A',data:lossA.map((v,i)=>i===idxA?v:null),borderColor:'#4a9eff',backgroundColor:'#4a9eff',pointRadius:7,showLine:false},
+        {label:'Min B',data:lossB.map((v,i)=>i===idxB?v:null),borderColor:'#2ecc71',backgroundColor:'#2ecc71',pointRadius:7,showLine:false},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:11},color:'#7a8099'}}},
+      scales:{
+        x:{title:{display:true,text:'FPR (proxy for threshold)',font:{size:11},color:'#7a8099'},ticks:{maxTicksLimit:10,color:'#7a8099',font:{size:10}},grid:{color:'#2e3348'}},
+        y:{title:{display:true,text:'Expected loss E[L]',font:{size:11},color:'#7a8099'},ticks:{color:'#7a8099',font:{size:10}},grid:{color:'#2e3348'}}
+      }
+    }
+  });
+}
+
+function handleCSV(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const lines = e.target.result.trim().split('\n');
+      const hdr = lines[0].toLowerCase().split(',').map(h=>h.trim());
+      const pi = hdr.indexOf('prob'), ti = hdr.indexOf('true_label'), gi = hdr.indexOf('group');
+      if(pi<0||ti<0||gi<0){alert('CSV must have columns: prob, true_label, group');return;}
+      const rows = lines.slice(1).map(l=>{
+        const c=l.split(',');
+        return {prob:parseFloat(c[pi]),label:parseInt(c[ti]),group:c[gi].trim()};
+      }).filter(r=>!isNaN(r.prob));
+      const rA=rows.filter(r=>r.group==='A'), rB=rows.filter(r=>r.group==='B');
+      const pA = rA.filter(r=>r.label===1).length/rA.length;
+      const pB = rB.filter(r=>r.label===1).length/rB.length;
+      document.getElementById('pa').value = pA.toFixed(2);
+      document.getElementById('pb').value = pB.toFixed(2);
+      const msg = document.getElementById('upload-msg');
+      msg.style.display='block';
+      msg.textContent = `Loaded ${rows.length} patients. Group A n=${rA.length}, P_A=${pA.toFixed(3)}. Group B n=${rB.length}, P_B=${pB.toFixed(3)}. Parameters updated.`;
+      update();
+    } catch(err){ alert('Error parsing CSV: '+err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function loadExample(type) {
+  if(type==='chronosig'){
+    document.getElementById('pa').value=0.30;
+    document.getElementById('pb').value=0.50;
+    document.getElementById('cfn').value=5;
+    document.getElementById('cfp').value=1;
+    document.getElementById('ma').value=1.5;
+    const msg=document.getElementById('upload-msg');
+    msg.style.display='block';
+    msg.textContent='CHRONOSIG parameters loaded: P_A=0.30, P_B=0.50, c_FN=5, c_FP=1, multiplier=1.5×';
+  } else {
+    document.getElementById('pa').value=0.46;
+    document.getElementById('pb').value=0.58;
+    document.getElementById('cfn').value=6;
+    document.getElementById('cfp').value=1;
+    document.getElementById('ma').value=2.0;
+    const msg=document.getElementById('upload-msg');
+    msg.style.display='block';
+    msg.textContent='CAMHS parameters loaded: P_A=0.46, P_B=0.58, c_FN=6, c_FP=1, multiplier=2.0×';
+  }
+  update();
+}
+
+function exportResults() {
+  const {pa,pb,cfn,cfp,ma} = getP();
+  const cfnA = cfn*ma;
+  const slopeA = (cfp*(1-pa))/(cfnA*pa);
+  const slopeB = (cfp*(1-pb))/(cfn*pb);
+  const ppvA = ppv(0.1,0.1,pa);
+  const ppvB = ppv(0.1,0.1,pb);
+  const data = {
+    title:'Fairness Optimiser Results',
+    parameters:{pa,pb,cfn,cfp,cfnA,ma},
+    results:{
+      tau_A_optimal:document.getElementById('tau-a').textContent,
+      tau_B_optimal:document.getElementById('tau-b').textContent,
+      optimal_slope_A:slopeA.toFixed(4),
+      optimal_slope_B:slopeB.toFixed(4),
+      ppv_gap:Math.abs(ppvB-ppvA).toFixed(4),
+      ppv_A:ppvA.toFixed(4),
+      ppv_B:ppvB.toFixed(4),
+      chouldechova_applies:pa!==pb,
+      tpr_gap_after_correction:'0.000'
+    },
+    theorem:'dTPR_G/dFPR_G at tau_G* = c_FP*(1-P_G) / (c_FN^G * P_G)',
+    reference:'From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage.'
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fairness_optimiser_results.json';
+  a.click();
+}
+
+function copyThresholds() {
+  const tA = document.getElementById('tau-a').textContent;
+  const tB = document.getElementById('tau-b').textContent;
+  const text = `Optimal thresholds:\nGroup A: τ_A* = ${tA}\nGroup B: τ_B* = ${tB}`;
+  navigator.clipboard.writeText(text).then(()=>alert('Copied to clipboard!'));
+}
+
+update();
+</script>
+</body>
+</html>

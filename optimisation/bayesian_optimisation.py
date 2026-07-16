@@ -228,7 +228,12 @@ axes[1, 0].grid(True, alpha=0.3)
 # Before vs after
 metrics = [f'{primary_feature[:12]}\nI_j',
            'TPR\nGroup A', 'TPR\nGroup B', 'TPR\nGap']
-baseline_vals = [0.0238, 0.353, 0.933, 0.580]
+baseline_vals = [
+    grid_imp,
+    grid_tpr_A,
+    grid_tpr_B,
+    grid_gap
+]
 bayes_vals = [bayes_imp, bayes_tpr_A, bayes_tpr_B, bayes_gap]
 
 x = np.arange(len(metrics))

@@ -153,7 +153,8 @@ axes[0, 2].grid(True, alpha=0.3)
 # Plot 4: Head to head
 methods = ['Baseline\n(default)', 'Grid\nSearch',
            'Bayesian\nOpt']
-tpr_gaps = [0.580,
+tpr_gaps = [
+    grid_results['tpr_gap'].min(),
             grid_best['tpr_gap'],
             bayes_best['tpr_gap']]
 ref_imps = [0.0238,

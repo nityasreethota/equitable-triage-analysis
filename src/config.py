@@ -205,7 +205,7 @@ COLOR_GRID = 'steelblue'
 COLOR_BAYES = 'purple'
 DPI = 150
 FIGURE_TITLE_SUFFIX = (
-    f'From Probabilities to Decisions [{CURRENT_MODE}] - '
+    f'From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage [{CURRENT_MODE}] - '
 )
 
 # ─────────────────────────────────────────

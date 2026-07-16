@@ -245,35 +245,6 @@ axes[1, 1].set_title(f'{primary_feature} Value vs SHAP\n'
 axes[1, 1].legend(fontsize=8)
 axes[1, 1].grid(True, alpha=0.3)
 
-# Plot 6: Permutation vs SHAP comparison
-perm_imps = [0.0] * len(FEATURES)
-shap_imps = [imp_b[f] for f in FEATURES]
-
-axes[1, 2].scatter(perm_imps, shap_imps,
-                    color='purple', s=100, zorder=5)
-for i, feat in enumerate(FEATURES):
-    axes[1, 2].annotate(feat[:15],
-                         (perm_imps[i], shap_imps[i]),
-                         textcoords='offset points',
-                         xytext=(5, 5), fontsize=7)
-axes[1, 2].axhline(y=0, color='black', linewidth=0.5)
-axes[1, 2].axvline(x=0, color='black', linewidth=0.5)
-axes[1, 2].set_xlabel('Permutation Importance I_j')
-axes[1, 2].set_ylabel('Mean |SHAP value|')
-axes[1, 2].set_title('Permutation vs SHAP\n'
-                      'Do both agree on bias source?')
-axes[1, 2].grid(True, alpha=0.3)
-
-plt.suptitle(f'SHAP Value Analysis: Feature Bias Detection\n'
-             f'{FIGURE_TITLE_SUFFIX}',
-             fontsize=12, fontweight='bold')
-plt.tight_layout()
-
-filepath = get_output_path('shap_analysis.png')
-plt.savefig(filepath, dpi=150, bbox_inches='tight')
-plt.show()
-print(f"Plot saved to {filepath}")
-
 # ─────────────────────────────────────────
 # 7. SUMMARY
 # ─────────────────────────────────────────
@@ -283,7 +254,7 @@ print(f"""
 Mode: {CURRENT_MODE}
 Primary bias feature: {primary_feature}
 
-Directional bias (key SHAP advantage over permutation):
+Directional bias:
   Group A mean SHAP: {shap_bias_A.mean():.4f}
   Group B mean SHAP: {shap_bias_B.mean():.4f}
   Gap: {shap_bias_A.mean() - shap_bias_B.mean():.4f}

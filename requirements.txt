@@ -6,3 +6,6 @@ seaborn
 scipy
 scikit-optimize
 shap
+lightgbm
+xgboost
+fairlearn

@@ -58,8 +58,7 @@ for fnr, fpr in zip(fnr_values, fpr_values):
           f"{ppv_b:<10.3f} {gap:<10.3f} {satisfied}")
 
 print("""
-Observation: Regardless of the FNR and FPR values chosen,
-as long as P_A ≠ P_B, PPV_A ≠ PPV_B.
+Observation: For every tested FNR/FPR pair, differing base rates produce different PPVs.
 Calibration is always violated when equalised odds holds
 and base rates differ. This is Chouldechova's result.
 """)
@@ -179,7 +178,7 @@ for i, (a, b) in enumerate(zip(vals_A_opt, vals_B_opt)):
                          ha='center', fontsize=14, color='red')
 
 plt.suptitle("Chouldechova's Impossibility Result: Numerical Proof\n"
-             "From Probabilities to Decisions",
+             "From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage",
              fontsize=12, fontweight='bold')
 
 plt.tight_layout()
@@ -194,5 +193,4 @@ print("Plot saved to visualisations/outputs/chouldechova_proof.png")
 
 print()
 print("=" * 70)
-print("PROOF SUMMARY")
 print("=" * 70)

@@ -19,7 +19,7 @@ def compute_confusion(decisions, true_outcomes):
 
 
 def compute_rates(TP, FP, TN, FN):
-    TPR = TP / (TP + FN) if (TP + FN) > 0 else 0
+    TPR = np.nan if (TP + FN)==0 else TP/(TP+FN) 
     FPR = FP / (FP + TN) if (FP + TN) > 0 else 0
     FNR = FN / (FN + TP) if (FN + TP) > 0 else 0
     TNR = TN / (TN + FP) if (TN + FP) > 0 else 0
