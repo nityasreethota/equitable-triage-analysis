@@ -1,0 +1,31 @@
+<html>
+<head>
+    <!-- Loads the official WebAssembly Pyodide execution engine -->
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+</head>
+<body>
+    <!-- Instructs the browser to compile your custom repository Python files dynamically -->
+    <gradio-lite>
+        <gradio-requirements>
+            numpy
+            scipy
+            scikit-learn
+            pandas
+            matplotlib
+        </gradio-requirements>
+
+        <gradio-file name="fairness_core.py">
+            <!-- This tag tells the browser to load your exact math calculations engine -->
+        </gradio-file>
+
+        <gradio-file name="example_data.csv">
+            <!-- This tag mounts your true verification sample data matrix -->
+        </gradio-file>
+
+        <gradio-file name="app.py" entrypoint>
+            <!-- This tag executes your production Gradio interface script -->
+        </gradio-file>
+    </gradio-lite>
+</body>
+</html>

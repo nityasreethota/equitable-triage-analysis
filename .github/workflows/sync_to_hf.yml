@@ -1,4 +1,4 @@
-name: Sync Webapp Folder to Hugging Face
+name: Sync Webapp to Free Hugging Face Space
 
 on:
   push:
@@ -11,46 +11,73 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Git and Sync Webapp Folder Only
+      - name: Setup Git and Assemble Browser App
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 1. Configure Git credentials
           git config --global user.email "git-actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 2. Clone the Hugging Face Space into a temporary deployment directory
+          # 1. Clone the Hugging Face Container
           git clone https://nityathota:$HF_TOKEN@huggingface.co/spaces/nityathota/nhs-triage-fairness-optimiser hf_space
-          
-          # 3. Clean out old files in the Hugging Face Space target directory
           rm -rf hf_space/*
           
-          # 4. Copy ONLY the contents of your webapp folder into the Space root
-          cp -r webapp/* hf_space/
+          # 2. Extract your Python source code files into environment variables
+          CORE_MATH=$(cat webapp/fairness_core.py)
+          APP_INTERFACE=$(cat webapp/app.py)
+          DATA_ROWS=$(cat webapp/example_data.csv)
           
-          # 5. Automatically write the required metadata at the top of Hugging Face's README
+          # 3. Assemble the deployment file injection layout dynamically
+          cat << EOF > hf_space/index.html
+          <html>
+          <head>
+              <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+          </head>
+          <body>
+              <gradio-lite>
+                  <gradio-requirements>
+                      numpy
+                      scipy
+                      scikit-learn
+                      pandas
+                      matplotlib
+                  </gradio-requirements>
+                  <gradio-file name="fairness_core.py">
+          $CORE_MATH
+                  </gradio-file>
+                  <gradio-file name="example_data.csv">
+          $DATA_ROWS
+                  </gradio-file>
+                  <gradio-file name="app.py" entrypoint>
+          $APP_INTERFACE
+                  </gradio-file>
+              </gradio-lite>
+          </body>
+          </html>
+          EOF
+          
+          # 4. Generate the required configuration headers for the free Static Space
           cat << 'EOF' > hf_space/README.md
           ---
           title: nhs-triage-fairness-optimiser
           emoji: ⚖️
           colorFrom: blue
           colorTo: green
-          sdk: gradio
-          sdk_version: 5.45.0
-          app_file: app.py
+          sdk: static
           pinned: false
           license: mit
           ---
           # NHS Triage Fairness Optimiser Deployed App
-          This interface is automatically synced from the main GitHub repository webapp directory.
+          This interface runs serverless Python algorithms natively inside the browser via Gradio-Lite.
           EOF
           
-          # 6. Commit and push ONLY the webapp code to Hugging Face
+          # 5. Push the build to the cloud
           cd hf_space
           git add .
           if ! git diff-index --quiet HEAD; then
-            git commit -m "Automated deployment: Syncing webapp folder from GitHub"
+            git commit -m "Automated deployment: Compiling serverless Gradio-Lite environment"
             git push origin main
           else
-            echo "No changes detected in webapp folder. Skipping deploy."
+            echo "No changes detected. Skipping push."
           fi
