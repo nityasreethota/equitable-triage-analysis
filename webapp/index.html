@@ -1,11 +1,10 @@
+cat << EOF > hf_space/index.html
 <html>
 <head>
-    <!-- Loads the official WebAssembly Pyodide execution engine -->
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+    <script type="module" crossorigin src="https://jsdelivr.net"></script>
+    <link rel="stylesheet" href="https://jsdelivr.net" />
 </head>
 <body>
-    <!-- Instructs the browser to compile your custom repository Python files dynamically -->
     <gradio-lite>
         <gradio-requirements>
             numpy==1.26.4

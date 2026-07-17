@@ -72,7 +72,7 @@ jobs:
           This interface runs serverless Python algorithms natively inside the browser via Gradio-Lite.
           EOF
           
-                    # 5. Automatically write the required browser metadata to the Space header
+          # 5. Automatically write the required metadata to the Space header
           cat << 'EOF' > hf_space/README.md
           ---
           title: nhs-triage-fairness-optimiser
@@ -80,9 +80,11 @@ jobs:
           colorFrom: blue
           colorTo: green
           sdk: static
+          sdk_version: 4.44.1
           pinned: true
           license: mit
           ---
           # NHS Triage Fairness Optimiser Deployed App
           This interface executes serverless Python algorithms natively inside the browser via Gradio-Lite.
           EOF
+
