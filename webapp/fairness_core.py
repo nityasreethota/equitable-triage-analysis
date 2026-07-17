@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.metrics import roc_curve, auc
 from dataclasses import dataclass
-
+ 
 
 # ─────────────────────────────────────────
 # 1. SYNTHETIC SCORE GENERATION
