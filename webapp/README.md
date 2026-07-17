@@ -3,7 +3,7 @@ title: Fairness Optimiser
 emoji: ⚖️
 colorFrom: blue
 colorTo: green
-sdk: gradio
+sdk: static
 sdk_version: "4.44.1"
 app_file: app.py
 pinned: false
