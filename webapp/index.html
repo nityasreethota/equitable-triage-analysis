@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://jsdelivr.net" />
 </head>
 <body>
-    <gradio-lite>
+    <gradio-lite type="app">
         <gradio-requirements>
             numpy==1.26.4
             pandas==2.2.2
@@ -16,18 +16,9 @@
             matplotlib==3.9.0
             scipy==1.12.0
         </gradio-requirements>
-
-        <gradio-file name="fairness_core.py">
-            <!-- This tag tells the browser to load your exact math calculations engine -->
-        </gradio-file>
-
-        <gradio-file name="example_data.csv">
-            <!-- This tag mounts your true verification sample data matrix -->
-        </gradio-file>
-
-        <gradio-file name="app.py" entrypoint>
-            <!-- This tag executes your production Gradio interface script -->
-        </gradio-file>
+        <gradio-file name="fairness_core.py"></gradio-file>
+        <gradio-file name="example_data.csv"></gradio-file>
+        <gradio-file name="app.py" entrypoint></gradio-file>
     </gradio-lite>
 </body>
 </html>
