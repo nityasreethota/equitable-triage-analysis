@@ -1,6 +1,9 @@
-cat << EOF > hf_space/index.html
+<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NHS Triage Fairness Optimiser</title>
     <script type="module" crossorigin src="https://jsdelivr.net"></script>
     <link rel="stylesheet" href="https://jsdelivr.net" />
 </head>
@@ -11,7 +14,7 @@ cat << EOF > hf_space/index.html
             pandas==2.2.2
             scikit-learn==1.5.1
             matplotlib==3.9.0
-            scipy
+            scipy==1.12.0
         </gradio-requirements>
 
         <gradio-file name="fairness_core.py">

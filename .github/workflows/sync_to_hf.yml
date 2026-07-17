@@ -18,30 +18,34 @@ jobs:
           git config --global user.email "git-actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 1. Clone the Hugging Face Container
+          # 1. Clone the Hugging Face Container securely
           git clone https://nityathota:$HF_TOKEN@huggingface.co/spaces/nityathota/nhs-triage-fairness-optimiser hf_space
           rm -rf hf_space/*
           
-          # 2. Extract your Python source code files into environment variables
+          # 2. Extract your production Python source code blocks into variables
           CORE_MATH=$(cat webapp/fairness_core.py)
           APP_INTERFACE=$(cat webapp/app.py)
           DATA_ROWS=$(cat webapp/example_data.csv)
           
-          # 3. Assemble the deployment file injection layout dynamically
+          # 3. Assemble a clean single-file browser runner using the stable serverless client
           cat << EOF > hf_space/index.html
+          <!DOCTYPE html>
           <html>
           <head>
-              <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
-              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>NHS Triage Fairness Optimiser</title>
+              <script type="module" crossorigin src="https://jsdelivr.net"></script>
+              <link rel="stylesheet" href="https://jsdelivr.net" />
           </head>
           <body>
-              <gradio-lite>
+              <gradio-lite type="app">
                   <gradio-requirements>
-                      numpy
-                      scipy
-                      scikit-learn
-                      pandas
-                      matplotlib
+                      numpy==1.26.4
+                      pandas==2.2.2
+                      scikit-learn==1.5.1
+                      matplotlib==3.9.0
+                      scipy==1.12.0
                   </gradio-requirements>
                   <gradio-file name="fairness_core.py">
           $CORE_MATH
@@ -57,7 +61,7 @@ jobs:
           </html>
           EOF
           
-          # 4. Generate the required configuration headers for the free Static Space
+          # 4. Generate the un-capped configurations for the Static Space
           cat << 'EOF' > hf_space/README.md
           ---
           title: nhs-triage-fairness-optimiser
@@ -65,26 +69,19 @@ jobs:
           colorFrom: blue
           colorTo: green
           sdk: static
-          pinned: false
-          license: mit
-          ---
-          # NHS Triage Fairness Optimiser Deployed App
-          This interface runs serverless Python algorithms natively inside the browser via Gradio-Lite.
-          EOF
-          
-          # 5. Automatically write the required metadata to the Space header
-          cat << 'EOF' > hf_space/README.md
-          ---
-          title: nhs-triage-fairness-optimiser
-          emoji: ⚖️
-          colorFrom: blue
-          colorTo: green
-          sdk: static
-          sdk_version: 4.44.1
           pinned: true
           license: mit
           ---
           # NHS Triage Fairness Optimiser Deployed App
           This interface executes serverless Python algorithms natively inside the browser via Gradio-Lite.
           EOF
-
+          
+          # 5. Push structural assets back to the cloud
+          cd hf_space
+          git add .
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "fix: hardcode serverless environment wrapper to clear pip wheel crashes"
+            git push origin main
+          else
+            echo "No changes detected. Skipping sync."
+          fi
