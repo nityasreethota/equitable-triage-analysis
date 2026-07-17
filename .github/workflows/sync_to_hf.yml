@@ -1,0 +1,56 @@
+name: Sync Webapp Folder to Hugging Face
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Git and Sync Webapp Folder Only
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # 1. Configure Git credentials
+          git config --global user.email "git-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # 2. Clone the Hugging Face Space into a temporary deployment directory
+          git clone https://nityathota:$HF_TOKEN@huggingface.co/spaces/nityathota/nhs-triage-fairness-optimiser hf_space
+          
+          # 3. Clean out old files in the Hugging Face Space target directory
+          rm -rf hf_space/*
+          
+          # 4. Copy ONLY the contents of your webapp folder into the Space root
+          cp -r webapp/* hf_space/
+          
+          # 5. Automatically write the required metadata at the top of Hugging Face's README
+          cat << 'EOF' > hf_space/README.md
+          ---
+          title: nhs-triage-fairness-optimiser
+          emoji: ⚖️
+          colorFrom: blue
+          colorTo: green
+          sdk: gradio
+          sdk_version: 5.45.0
+          app_file: app.py
+          pinned: false
+          license: mit
+          ---
+          # NHS Triage Fairness Optimiser Deployed App
+          This interface is automatically synced from the main GitHub repository webapp directory.
+          EOF
+          
+          # 6. Commit and push ONLY the webapp code to Hugging Face
+          cd hf_space
+          git add .
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "Automated deployment: Syncing webapp folder from GitHub"
+            git push origin main
+          else
+            echo "No changes detected in webapp folder. Skipping deploy."
+          fi
