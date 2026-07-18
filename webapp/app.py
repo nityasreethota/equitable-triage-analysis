@@ -120,7 +120,7 @@ def compute(pa, pb, cfn, cfp, ma, csv_file):
         except Exception as e:
             return (None, None, None,
                     f"**Error reading CSV:** {e}\n\nExpected columns: "
-                    f"`prob, true_label, group`", "", "")
+                    f"`prob, true_label, group`", "{}")
     else:
         res = run_full_analysis(pa, pb, cfn, cfp, ma)
         source_note = "Using synthetic demonstration data (adjust sliders)"
@@ -179,66 +179,44 @@ def compute(pa, pb, cfn, cfp, ma, csv_file):
 # GRADIO UI
 # ─────────────────────────────────────────
  
-THEOREM_MD = r"""
+THEOREM_MD = """
 ## Theorem 1 
  
-Let $G \in \{A, B\}$ be two demographic groups with base rates $P_G$,
-group-specific costs $c_{FN}^G, c_{FP}^G > 0$, and differentiable ROC
-curves. The threshold $\tau_G^*$ minimising expected Bayesian loss
+Let **G ∈ {A, B}** be two demographic groups with base rates **P<sub>G</sub>**, group-specific costs **c<sub>FN</sub><sup>G</sup>, c<sub>FP</sub><sup>G</sup> > 0**, and differentiable ROC curves. The threshold **τ<sub>G</sub>*** minimising expected Bayesian loss:
  
-$$\mathcal{L}_G(\tau) = c_{FN}^G \cdot FNR_G(\tau) \cdot P_G + c_{FP}^G \cdot FPR_G(\tau) \cdot (1-P_G)$$
+<div style="background-color: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: monospace; margin: 10px 0;">
+  L<sub>G</sub>(τ) = c<sub>FN</sub><sup>G</sup> · FNR<sub>G</sub>(τ) · P<sub>G</sub> + c<sub>FP</sub><sup>G</sup> · FPR<sub>G</sub>(τ) · (1 - P<sub>G</sub>)
+</div>
  
 satisfies the first-order condition:
  
-$$\left.\frac{d\,TPR_G}{d\,FPR_G}\right|_{\tau_G^*} = \frac{c_{FP}^G(1-P_G)}{c_{FN}^G \cdot P_G}$$
+<div style="background-color: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: monospace; margin: 10px 0;">
+  [ d TPR<sub>G</sub> / d FPR<sub>G</sub> ] |<sub>τ<sub>G</sub>*</sub> = [ c<sub>FP</sub><sup>G</sup> (1 - P<sub>G</sub>) ] / [ c<sub>FN</sub><sup>G</sup> · P<sub>G</sub> ]
+</div>
  
-**Corollary:** when $P_A \neq P_B$, the right-hand side differs between
-groups, so $\tau_A^* \neq \tau_B^*$ — a uniform threshold is provably
-suboptimal for at least one group. Group-specific thresholds are not a
-fairness accommodation; they are the mathematically optimal decision rule.
+**Corollary:** When **P<sub>A</sub> ≠ P<sub>B</sub>**, the right-hand side differs between groups, so **τ<sub>A</sub>* ≠ τ<sub>B</sub>*** — a uniform threshold is provably suboptimal for at least one group. Group-specific thresholds are not a fairness accommodation; they are the mathematically optimal decision rule.
  
-This connects directly to **Chouldechova's (2017) impossibility result**:
-because $P_A \neq P_B$ in any historically biased dataset, calibration
-(equal PPV) and equalised odds (equal TPR/FPR) can never be simultaneously
-satisfied. This tool always prioritises equalised odds — the criterion
-most relevant to patient safety — and reports the resulting, irreducible
-calibration gap explicitly.
+This connects directly to **Chouldechova's (2017) impossibility result**: because **P<sub>A</sub> ≠ P<sub>B</sub>** in any historically biased dataset, calibration (equal PPV) and equalised odds (equal TPR/FPR) can never be simultaneously satisfied. This tool always prioritises equalised odds — the criterion most relevant to patient safety — and reports the resulting, irreducible calibration gap explicitly.
 """
  
 GUIDE_MD = """
 ## How to use this tool
  
-1. **Set base rates** P<sub>A</sub> and P<sub>B</sub> — the true proportion of each
-   group that genuinely needs care.
-2. **Set error costs** c<sub>FN</sub> (cost of missing someone in crisis) and
-   c<sub>FP</sub> (cost of an unnecessary referral).
-3. **Adjust the Group A multiplier** if that group faces higher
-   consequences from being missed (e.g. young carers, isolated patients
-   with fewer alternative routes to care).
-4. **Optionally upload a CSV** of real predicted probabilities with columns
-   `prob, true_label, group` (group = A or B) to run the exact same maths
-   on your own data instead of the synthetic demonstration.
-5. Read off the optimal thresholds τ<sub>A</sub>* and τ<sub>B</sub>* and their
-   geometric meaning on the ROC curve.
+1. **Set base rates** P<sub>A</sub> and P<sub>B</sub> — the true proportion of each group that genuinely needs care.
+2. **Set error costs** c<sub>FN</sub> (cost of missing someone in crisis) and c<sub>FP</sub> (cost of an unnecessary referral).
+3. **Adjust the Group A multiplier** if that group faces higher consequences from being missed (e.g. young carers, isolated patients with fewer alternative routes to care).
+4. **Optionally upload a CSV** of real predicted probabilities with columns `prob, true_label, group` (group = A or B) to run the exact same maths on your own data instead of the synthetic demonstration.
+5. Read off the optimal thresholds τ<sub>A</sub>* and τ<sub>B</sub>* and their geometric meaning on the ROC curve.
  
 ### CSV format
-```
-prob,true_label,group
-0.32,0,A
-0.71,1,B
-0.18,1,A
-0.85,1,B
-```
- 
+prob,true_label,group0.32,0,A0.71,1,B0.18,1,A0.85,1,B
 ### Reference
-*From Proxy Features to Fair Decisions: Investigating Algorithmic Bias 
-and Threshold Correction in NHS Mental Health AI Triage.*
-Building on Chouldechova, A. (2017), *Fair prediction with
-disparate impact*, Big Data 5(2).
+*From Proxy Features to Fair Decisions: Investigating Algorithmic Bias and Threshold Correction in NHS Mental Health AI Triage.*
+Building on Chouldechova, A. (2017), *Fair prediction with disparate impact*, Big Data 5(2).
 """
  
 with gr.Blocks(title="Fairness Optimiser",
-               theme=gr.themes.Soft(primary_hue="blue")) as demo:
+                theme=gr.themes.Soft(primary_hue="blue")) as demo:
  
     gr.Markdown(
         "# ⚖️ Fairness Optimiser\n"
@@ -255,24 +233,23 @@ with gr.Blocks(title="Fairness Optimiser",
                 with gr.Column(scale=1):
                     gr.Markdown("#### Base rates")
                     pa = gr.Slider(0.05, 0.95, value=0.30, step=0.01,
-                                    label="P_A — Group A base rate (underrepresented)")
+                                   label="P_A — Group A base rate (underrepresented)")
                     pb = gr.Slider(0.05, 0.95, value=0.50, step=0.01,
-                                    label="P_B — Group B base rate (majority)")
+                                   label="P_B — Group B base rate (majority)")
  
                     gr.Markdown("#### Error costs")
                     cfn = gr.Slider(1, 20, value=5, step=0.5,
-                                     label="c_FN — cost of missing someone in crisis")
+                                    label="c_FN — cost of missing someone in crisis")
                     cfp = gr.Slider(0.5, 5, value=1, step=0.5,
-                                     label="c_FP — cost of unnecessary referral")
+                                    label="c_FP — cost of unnecessary referral")
                     ma = gr.Slider(1.0, 3.0, value=1.5, step=0.1,
-                                    label="Group A c_FN multiplier (young carers)")
+                                   label="Group A c_FN multiplier (young carers)")
  
                     gr.Markdown("#### Or upload real data")
                     csv_file = gr.File(label="CSV: prob, true_label, group",
-                                        file_types=[".csv"])
+                                       file_types=[".csv"])
  
-                    run_btn = gr.Button("Compute optimal thresholds ⚡",
-                                         variant="primary")
+                    run_btn = gr.Button("Compute optimal thresholds ⚡", variant="primary")
  
                 with gr.Column(scale=2):
                     summary = gr.Markdown()
@@ -280,7 +257,7 @@ with gr.Blocks(title="Fairness Optimiser",
             with gr.Row():
                 roc_plot = gr.Plot(label="ROC curves with optimal points")
                 loss_plot = gr.Plot(label="Expected loss curves")
-            chould_plot = gr.Plot(label="Chouldechova's impossibility")
+                chould_plot = gr.Plot(label="Chouldechova's impossibility")
  
             gr.Markdown("#### Export")
             export_json = gr.Code(label="Results (JSON)", language="json")
@@ -304,7 +281,4 @@ with gr.Blocks(title="Fairness Optimiser",
     )
  
 if __name__ == "__main__":
-    # When localhost accessibility is restricted (corporate proxy / firewall),
-    # Gradio can fail the local launch check. Use `share=True` to create a
-    # temporary public tunnel as a robust fallback for local testing.
-    demo.launch(share=True)
+    demo.launch()

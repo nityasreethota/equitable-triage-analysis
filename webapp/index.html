@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NHS Triage Fairness Optimiser</title>
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"> </script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css">  </head>
+    <script type="module" src="https://jsdelivr.net"></script>
+    <link rel="stylesheet" href="https://jsdelivr.net">
+</head>
 <body>
     <gradio-lite type="app">
         <gradio-requirements>
@@ -16,7 +17,6 @@
             scipy==1.12.0
         </gradio-requirements>
         <gradio-file name="fairness_core.py"></gradio-file>
-        <gradio-file name="example_data.csv"></gradio-file>
         <gradio-file name="app.py" entrypoint></gradio-file>
     </gradio-lite>
 </body>

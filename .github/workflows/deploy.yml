@@ -1,0 +1,24 @@
+name: Deploy Webapp Only
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'webapp/**'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Isolating and Deploying Webapp Directory
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./webapp
