@@ -15,13 +15,15 @@
     <!-- This element tells the browser to initialize the Python Pyodide runtime environment -->
     <gradio-lite type="app">
         
-        <gradio-requirements>
+        <gradio-lite type="app">
+        
+            <gradio-ext>
 numpy
 pandas
 scikit-learn
 matplotlib
 scipy
-        </gradio-requirements>
+            </gradio-ext>
 
         <!-- Sandbox dependency registration mappings -->
         <gradio-file name="fairness_core.py"></gradio-file>
