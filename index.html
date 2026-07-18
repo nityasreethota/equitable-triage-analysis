@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NHS Triage Fairness Optimiser</title>
     
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@0.4.1/dist/lite.js"></script>
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@0.4.1/dist/lite.css" />
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@4.32.1/dist/lite.js"></script>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@4.32.1/dist/lite.css" />
   
 
 </head>
@@ -14,11 +14,11 @@
 
     <gradio-lite type="app">
         <gradio-requirements>
-numpy==1.25.2
-pandas==2.1.1
-scikit-learn==1.3.2
-matplotlib==3.7.3
-scipy==1.11.3
+numpy
+pandas
+scikit-learn
+matplotlib
+scipy
         </gradio-requirements>
         <gradio-file name="fairness_core.py"></gradio-file>
         <gradio-file name="app.py" entrypoint></gradio-file>
