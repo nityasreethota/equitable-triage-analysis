@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NHS Triage Fairness Optimiser</title>
+    <script type="module" src="https://jsdelivr.net"></script>
+    <link rel="stylesheet" href="https://jsdelivr.net">
+</head>
+<body>
+    <gradio-lite type="app">
+        <gradio-requirements>
+            numpy==1.26.4
+            pandas==2.2.2
+            scikit-learn==1.5.1
+            matplotlib==3.9.0
+            scipy==1.12.0
+        </gradio-requirements>
+        <gradio-file name="fairness_core.py"></gradio-file>
+        <gradio-file name="app.py" entrypoint></gradio-file>
+    </gradio-lite>
+</body>
+</html>
