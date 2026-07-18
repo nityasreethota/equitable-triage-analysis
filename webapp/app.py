@@ -3,7 +3,12 @@ app.py
 
 Deploy to Hugging Face Spaces: see README.md
 """
- 
+import sys
+if "micropip" in sys.modules or "pyodide" in sys.modules:
+    import micropip
+    import asyncio
+    asyncio.run(micropip.install(["numpy", "pandas", "scikit-learn", "matplotlib", "scipy"]))
+
 import io
 import json
 import numpy as np
